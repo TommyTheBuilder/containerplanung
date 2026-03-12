@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
@@ -9,6 +10,8 @@ require('dotenv').config();
 const app = express();
 const PORT = Number(process.env.PORT || 3005);
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+const SHARED_AUTH_SECRET = process.env.SHARED_AUTH_SECRET || '';
+const SSO_LOGIN_URL = process.env.SSO_LOGIN_URL || 'https://test.paletten-ms.de/login.html';
 
 const pool = new Pool({
   host: process.env.DB_HOST || '127.0.0.1',
@@ -21,6 +24,63 @@ const pool = new Pool({
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
+app.get('/api/auth/sso/config', (_req, res) => {
+  res.json({ loginUrl: SSO_LOGIN_URL });
+});
+
+app.post('/api/auth/sso-exchange', async (req, res) => {
+  if (!SHARED_AUTH_SECRET) {
+    return res.status(500).json({ message: 'SHARED_AUTH_SECRET ist nicht konfiguriert.' });
+  }
+
+  const { ssoToken } = req.body || {};
+  if (!ssoToken) {
+    return res.status(400).json({ message: 'ssoToken ist erforderlich.' });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(ssoToken, SHARED_AUTH_SECRET, { algorithms: ['HS256'] });
+  } catch (_error) {
+    return res.status(401).json({ message: 'SSO-Token ungültig oder abgelaufen.' });
+  }
+
+  const username = String(payload.username || payload.email || '').trim().toLowerCase();
+  if (!username) {
+    return res.status(400).json({ message: 'SSO-Token enthält keinen Benutzernamen.' });
+  }
+
+  const role = normalizeRole(payload.role);
+  const user = await upsertSsoUser(username, role);
+
+  const token = jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '10h' });
+  return res.json({ token, user });
+});
+
+app.post('/api/auth/sso-token', (req, res) => {
+  if (!SHARED_AUTH_SECRET) {
+    return res.status(500).json({ message: 'SHARED_AUTH_SECRET ist nicht konfiguriert.' });
+  }
+
+  const headerSecret = req.headers['x-auth-secret'];
+  if (headerSecret !== SHARED_AUTH_SECRET) {
+    return res.status(403).json({ message: 'Kein Zugriff auf SSO-Token-Erzeugung.' });
+  }
+
+  const { username, role = 'disponent', ttlSeconds = 120 } = req.body || {};
+  if (!username) {
+    return res.status(400).json({ message: 'username ist erforderlich.' });
+  }
+
+  const token = jwt.sign(
+    { username: String(username).trim().toLowerCase(), role: normalizeRole(role) },
+    SHARED_AUTH_SECRET,
+    { expiresIn: Math.max(30, Number(ttlSeconds) || 120) },
+  );
+
+  return res.json({ ssoToken: token });
+});
+
 app.get('/health', async (_req, res) => {
   try {
     const result = await pool.query('SELECT NOW() AS now');
@@ -28,27 +88,6 @@ app.get('/health', async (_req, res) => {
   } catch (error) {
     return res.status(500).json({ ok: false, message: 'DB nicht erreichbar', error: error.message });
   }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) {
-    return res.status(400).json({ message: 'Benutzername und Passwort sind erforderlich.' });
-  }
-
-  const userResult = await pool.query('SELECT id, username, password_hash, role FROM app_users WHERE username = $1', [username]);
-  if (!userResult.rowCount) {
-    return res.status(401).json({ message: 'Ungültige Zugangsdaten.' });
-  }
-
-  const user = userResult.rows[0];
-  const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) {
-    return res.status(401).json({ message: 'Ungültige Zugangsdaten.' });
-  }
-
-  const token = jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '10h' });
-  return res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
 });
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
@@ -124,6 +163,32 @@ function authorizeRoles(...roles) {
     if (!roles.includes(req.user.role)) return res.status(403).json({ message: 'Keine Berechtigung.' });
     return next();
   };
+}
+
+function normalizeRole(role) {
+  return ['admin', 'disponent'].includes(role) ? role : 'disponent';
+}
+
+async function upsertSsoUser(username, role) {
+  const existing = await pool.query('SELECT id, username, role FROM app_users WHERE username = $1', [username]);
+  if (existing.rowCount) {
+    const user = existing.rows[0];
+    if (user.role !== role) {
+      const updated = await pool.query('UPDATE app_users SET role = $2 WHERE id = $1 RETURNING id, username, role', [user.id, role]);
+      return updated.rows[0];
+    }
+    return user;
+  }
+
+  const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+  const created = await pool.query(
+    `INSERT INTO app_users (username, password_hash, role)
+     VALUES ($1, $2, $3)
+     RETURNING id, username, role`,
+    [username, randomPasswordHash, role],
+  );
+
+  return created.rows[0];
 }
 
 async function initDatabase() {
