@@ -18,6 +18,29 @@
     </header>
 
     <main class="dashboard-main">
+      <section class="card" id="authCard">
+        <h2>Anmeldung</h2>
+        <form id="loginForm" class="row">
+          <div>
+            <label for="username">Benutzername</label>
+            <input id="username" name="username" required />
+          </div>
+          <div>
+            <label for="password">Passwort</label>
+            <input id="password" name="password" type="password" required />
+          </div>
+          <div class="action-area">
+            <button type="submit">Login</button>
+          </div>
+        </form>
+        <small class="muted">Standard Seed-User: admin / ctpl11</small>
+      </section>
+
+      <section class="card booking-card hidden" id="bookingCard">
+        <div class="calendar-head">
+          <h2>Neue Buchung</h2>
+          <button id="logoutBtn" class="secondary" type="button">Logout</button>
+        </div>
       <section class="card booking-card">
         <h2>Neue Buchung</h2>
         <form id="bookingForm">
@@ -63,6 +86,10 @@
         </form>
       </section>
 
+      <section class="card hidden" id="calendarCard">
+        <div class="calendar-head">
+          <span class="badge">Monatsübersicht</span>
+          <small class="muted" id="statusText">Bitte anmelden.</small>
       <section class="card">
         <div class="calendar-head">
           <span class="badge">Monatsübersicht</span>

@@ -11,6 +11,13 @@ button:disabled { opacity:.6; cursor:not-allowed; }
 .row > * { flex: 1; min-width: 220px; }
 .muted { color:#6b7280; font-size: 12px; }
 .badge { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; background:#e9eef5; color:#0b2a4a; }
+.hidden { display: none !important; }
+
+:root {
+  --header-gradient-dark: radial-gradient(circle at center, #0b3f8a 0%, #081a34 100%);
+}
+
+body.darkmode { background: #111827; color: #e5e7eb; }
 
 :root {
   --primary: #2563eb;
@@ -36,6 +43,10 @@ body.darkmode {
   gap: 16px;
 }
 
+.brand { font-size: 30px; font-weight: 700; color: #fff; }
+.calendar-toolbar { display: inline-flex; gap: 8px; }
+.topbar-modern h1 { margin: 0; justify-self: center; color: #fff; font-size: clamp(24px, 3vw, 38px); text-transform: capitalize; }
+.dashboard-main { max-width: 1560px; margin: 0 auto; padding: 18px 24px 16px; }
 .brand {
   font-size: 30px;
   font-weight: 700;
@@ -68,6 +79,10 @@ body.darkmode button.secondary {
   border-color: #374151;
 }
 
+.booking-card h2 { margin: 0; }
+.action-area { display: flex; align-items: end; }
+.calendar-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
 .booking-card h2 {
   margin-top: 0;
 }
@@ -102,6 +117,15 @@ body.darkmode button.secondary {
   border: 1px solid #d1d5db;
 }
 
+body.darkmode .day-name { border-color: #374151; color: #9ca3af; background: #111827; }
+.day-cell { min-height: 150px; border-radius: 10px; border: 1px solid #d1d5db; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: #fff; }
+body.darkmode .day-cell { border-color: #374151; background: #0f172a; }
+.day-cell.other-month { opacity: .4; }
+.day-number { font-size: 13px; color: #94a3b8; text-align: right; }
+
+.booking-item { border-radius: 8px; padding: 8px; color: #fff; cursor: pointer; box-shadow: 0 2px 5px rgba(0, 0, 0, .2); }
+.booking-title { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.booking-meta { font-size: 12px; line-height: 1.3; opacity: .95; }
 body.darkmode .day-name {
   border-color: #374151;
   color: #9ca3af;
@@ -161,6 +185,7 @@ body.darkmode .day-cell {
 
 @media (max-width: 768px) {
   .dashboard-main { padding: 12px; }
+  .calendar-grid { grid-template-columns: 1fr; }
   .calendar-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
   .day-cell { min-height: 100px; }
 }
