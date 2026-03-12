@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Containerplanung</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="darkmode">
+    <header class="topbar-modern">
+      <div class="brand">Containerplanung</div>
+      <div class="calendar-toolbar">
+        <button id="prevMonth" class="secondary">◀</button>
+        <button id="todayBtn" class="secondary">Heute</button>
+        <button id="nextMonth" class="secondary">▶</button>
+      </div>
+      <h1 id="monthLabel"></h1>
+    </header>
+
+    <main class="dashboard-main">
+      <section class="card" id="authCard">
+        <h2>Anmeldung</h2>
+        <form id="loginForm" class="row">
+          <div>
+            <label for="username">Benutzername</label>
+            <input id="username" name="username" required />
+          </div>
+          <div>
+            <label for="password">Passwort</label>
+            <input id="password" name="password" type="password" required />
+          </div>
+          <div class="action-area">
+            <button type="submit">Login</button>
+          </div>
+        </form>
+        <small class="muted">Standard Seed-User: admin / ctpl11</small>
+      </section>
+
+      <section class="card booking-card hidden" id="bookingCard">
+        <div class="calendar-head">
+          <h2>Neue Buchung</h2>
+          <button id="logoutBtn" class="secondary" type="button">Logout</button>
+        </div>
+        <form id="bookingForm">
+          <div class="row">
+            <div>
+              <label for="title">Titel</label>
+              <input id="title" name="title" required />
+            </div>
+            <div>
+              <label for="containerNo">Containernummer</label>
+              <input id="containerNo" name="containerNo" required />
+            </div>
+            <div>
+              <label for="customer">Kunde</label>
+              <input id="customer" name="customer" required />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="plate">Kennzeichen</label>
+              <input id="plate" name="plate" required />
+            </div>
+            <div>
+              <label for="orderNo">Auftragsnummer</label>
+              <input id="orderNo" name="orderNo" required />
+            </div>
+            <div>
+              <label for="bookingDate">Datum</label>
+              <input id="bookingDate" name="bookingDate" type="date" required />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="bookingColor">Buchungsfarbe</label>
+              <input id="bookingColor" name="bookingColor" type="color" value="#0ea5e9" />
+            </div>
+            <div class="action-area">
+              <button type="submit">Buchung speichern</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section class="card hidden" id="calendarCard">
+        <div class="calendar-head">
+          <span class="badge">Monatsübersicht</span>
+          <small class="muted" id="statusText">Bitte anmelden.</small>
+        </div>
+        <div id="calendar" class="calendar-grid" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <template id="bookingTemplate">
+      <article class="booking-item">
+        <div class="booking-title"></div>
+        <div class="booking-meta"></div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
