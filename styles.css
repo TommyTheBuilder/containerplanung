@@ -19,6 +19,18 @@ button:disabled { opacity:.6; cursor:not-allowed; }
 
 body.darkmode { background: #111827; color: #e5e7eb; }
 
+:root {
+  --primary: #2563eb;
+  --surface-glass: rgba(255, 255, 255, 0.12);
+  --surface-glass-hover: rgba(255, 255, 255, 0.24);
+  --header-gradient-dark: radial-gradient(circle at center, #0b3f8a 0%, #081a34 100%);
+}
+
+body.darkmode {
+  background: #111827;
+  color: #e5e7eb;
+}
+
 .topbar-modern {
   min-height: 90px;
   padding: 10px 24px;
@@ -35,6 +47,29 @@ body.darkmode { background: #111827; color: #e5e7eb; }
 .calendar-toolbar { display: inline-flex; gap: 8px; }
 .topbar-modern h1 { margin: 0; justify-self: center; color: #fff; font-size: clamp(24px, 3vw, 38px); text-transform: capitalize; }
 .dashboard-main { max-width: 1560px; margin: 0 auto; padding: 18px 24px 16px; }
+.brand {
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.calendar-toolbar {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.topbar-modern h1 {
+  margin: 0;
+  justify-self: center;
+  color: #fff;
+  font-size: clamp(24px, 3vw, 38px);
+}
+
+.dashboard-main {
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 18px 24px 16px;
+}
 
 body.darkmode .card,
 body.darkmode input,
@@ -48,6 +83,29 @@ body.darkmode button.secondary {
 .action-area { display: flex; align-items: end; }
 .calendar-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
 .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.booking-card h2 {
+  margin-top: 0;
+}
+
+.action-area {
+  display: flex;
+  align-items: end;
+}
+
+.calendar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
 
 .day-name {
   padding: 10px;
@@ -68,6 +126,57 @@ body.darkmode .day-cell { border-color: #374151; background: #0f172a; }
 .booking-item { border-radius: 8px; padding: 8px; color: #fff; cursor: pointer; box-shadow: 0 2px 5px rgba(0, 0, 0, .2); }
 .booking-title { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
 .booking-meta { font-size: 12px; line-height: 1.3; opacity: .95; }
+body.darkmode .day-name {
+  border-color: #374151;
+  color: #9ca3af;
+  background: #111827;
+}
+
+.day-cell {
+  min-height: 150px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #fff;
+}
+
+body.darkmode .day-cell {
+  border-color: #374151;
+  background: #0f172a;
+}
+
+.day-cell.other-month {
+  opacity: .4;
+}
+
+.day-number {
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: right;
+}
+
+.booking-item {
+  border-radius: 8px;
+  padding: 8px;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .2);
+}
+
+.booking-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.booking-meta {
+  font-size: 12px;
+  line-height: 1.3;
+  opacity: .95;
+}
 
 @media (max-width: 900px) {
   .topbar-modern { grid-template-columns: 1fr; }
@@ -77,5 +186,6 @@ body.darkmode .day-cell { border-color: #374151; background: #0f172a; }
 @media (max-width: 768px) {
   .dashboard-main { padding: 12px; }
   .calendar-grid { grid-template-columns: 1fr; }
+  .calendar-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
   .day-cell { min-height: 100px; }
 }
