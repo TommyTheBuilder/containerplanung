@@ -391,8 +391,35 @@ darkModeToggle?.addEventListener('click', () => {
   gearMenu?.classList.remove('is-open');
 });
 
-moduleDashboardBtn?.addEventListener('click', () => {
-  window.location.href = 'https://test.paletten-ms.de/dashboard.html';
+moduleDashboardBtn?.addEventListener('click', async () => {
+  const authToken = localStorage.getItem(TOKEN_KEY) || '';
+
+  if (!authToken) {
+    window.location.href = 'https://test.paletten-ms.de/dashboard.html';
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/auth/sso-forward-token', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+
+    if (!response.ok) throw new Error('SSO-Weiterleitungs-Token konnte nicht erstellt werden.');
+
+    const body = await response.json();
+    const ssoToken = body?.ssoToken || '';
+    const dashboardUrl = new URL('https://test.paletten-ms.de/dashboard.html');
+
+    if (ssoToken) {
+      dashboardUrl.searchParams.set('ssoToken', ssoToken);
+      dashboardUrl.searchParams.set('source', window.location.host);
+    }
+
+    window.location.href = dashboardUrl.toString();
+  } catch (_error) {
+    window.location.href = 'https://test.paletten-ms.de/dashboard.html';
+  }
 });
 
 logoutBtn?.addEventListener('click', () => {

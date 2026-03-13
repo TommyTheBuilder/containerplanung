@@ -89,6 +89,21 @@ app.post('/api/auth/sso-token', (req, res) => {
   return res.json({ ssoToken: token });
 });
 
+app.post('/api/auth/sso-forward-token', requireAuth, async (req, res) => {
+  if (!SHARED_AUTH_SECRET) {
+    return res.status(500).json({ message: 'SHARED_AUTH_SECRET ist nicht konfiguriert.' });
+  }
+
+  const username = String(req.user?.username || '').trim().toLowerCase();
+  if (!username) {
+    return res.status(400).json({ message: 'Kein Benutzername für SSO-Weiterleitung verfügbar.' });
+  }
+
+  const role = normalizeRole(req.user?.role);
+  const ssoToken = jwt.sign({ username, role }, SHARED_AUTH_SECRET, { expiresIn: '120s' });
+  return res.json({ ssoToken });
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body || {};
   const normalizedUsername = String(username || '').trim().toLowerCase();
