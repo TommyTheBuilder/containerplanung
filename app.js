@@ -97,7 +97,7 @@ todayBtn.addEventListener('click', () => {
 
 async function processSsoReturn() {
   const url = new URL(window.location.href);
-  const ssoToken = url.searchParams.get('ssoToken');
+  const ssoToken = getSsoTokenFromUrl(url);
   if (!ssoToken) return;
 
   try {
@@ -115,10 +115,23 @@ async function processSsoReturn() {
     await fetchBookings();
 
     url.searchParams.delete('ssoToken');
+    url.searchParams.delete('session');
     window.history.replaceState({}, document.title, url.toString());
   } catch (_error) {
     statusText.textContent = 'SSO-Anmeldung fehlgeschlagen.';
   }
+}
+
+function getSsoTokenFromUrl(url) {
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('session');
+  if (directToken) return directToken;
+
+  if (url.hash.startsWith('#')) {
+    const hashParams = new URLSearchParams(url.hash.slice(1));
+    return hashParams.get('ssoToken') || hashParams.get('session') || '';
+  }
+
+  return '';
 }
 
 async function fetchBookings() {
