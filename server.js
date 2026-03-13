@@ -22,7 +22,9 @@ const pool = new Pool({
 });
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+app.use('/components', express.static(path.join(__dirname, 'components')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/auth/sso/config', (_req, res) => {
   res.json({ loginUrl: SSO_LOGIN_URL });
@@ -142,7 +144,7 @@ app.delete('/api/bookings/:id', requireAuth, authorizeRoles('admin', 'disponent'
 });
 
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 function requireAuth(req, res, next) {
