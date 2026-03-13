@@ -30,6 +30,9 @@ if (token) {
   processSsoReturn();
 }
 
+ssoLoginBtn.addEventListener('click', () => {
+  startSsoLogin({ force: true });
+});
 
 logoutBtn.addEventListener('click', () => {
   token = '';
@@ -155,6 +158,7 @@ async function processSsoReturn() {
       return;
     }
 
+  } catch (_error) {
     if (sessionStorage.getItem(SSO_RETRY_KEY) !== '1') {
       sessionStorage.setItem(SSO_RETRY_KEY, '1');
       cleanupSsoParams(url);
@@ -192,6 +196,7 @@ async function exchangeSsoToken(ssoToken) {
     return null;
   }
 
+  if (!response.ok) return null;
   return response.json();
 }
 
