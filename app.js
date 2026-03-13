@@ -16,6 +16,8 @@ const todayBtn = document.getElementById('todayBtn');
 
 const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const TOKEN_KEY = 'containerplanung-token';
+const AUTO_SSO_ATTEMPT_KEY = 'containerplanung-auto-sso-attempted';
+const SSO_RETRY_KEY = 'containerplanung-sso-retry';
 let currentDate = new Date();
 let bookings = [];
 let token = localStorage.getItem(TOKEN_KEY) || '';
@@ -23,20 +25,14 @@ let token = localStorage.getItem(TOKEN_KEY) || '';
 if (bookingDateInput) bookingDateInput.value = toInputDate(new Date());
 renderCalendar();
 applyAuthState(Boolean(token));
-if (token) fetchBookings();
-processSsoReturn();
+if (token) {
+  fetchBookings();
+} else {
+  processSsoReturn();
+}
 
-ssoLoginBtn.addEventListener('click', async () => {
-  try {
-    const response = await fetch('/api/auth/sso/config');
-    const data = await response.json();
-    const callbackUrl = `${window.location.origin}${window.location.pathname}`;
-    const loginUrl = new URL(data.loginUrl);
-    loginUrl.searchParams.set('returnUrl', callbackUrl);
-    window.location.href = loginUrl.toString();
-  } catch (_error) {
-    statusText.textContent = 'SSO-Login konnte nicht gestartet werden.';
-  }
+ssoLoginBtn.addEventListener('click', () => {
+  startSsoLogin({ force: true });
 });
 
 logoutBtn.addEventListener('click', () => {
@@ -95,10 +91,34 @@ todayBtn.addEventListener('click', () => {
   fetchBookings();
 });
 
+async function startSsoLogin({ force = false } = {}) {
+  if (!force && localStorage.getItem(AUTO_SSO_ATTEMPT_KEY) === '1') {
+    return;
+  }
+
+  if (!force) {
+    localStorage.setItem(AUTO_SSO_ATTEMPT_KEY, '1');
+  }
+
+  try {
+    const response = await fetch('/api/auth/sso/config');
+    const data = await response.json();
+    const callbackUrl = `${window.location.origin}${window.location.pathname}`;
+    const loginUrl = new URL(data.loginUrl);
+    loginUrl.searchParams.set('returnUrl', callbackUrl);
+    window.location.href = loginUrl.toString();
+  } catch (_error) {
+    statusText.textContent = 'SSO-Login konnte nicht gestartet werden.';
+  }
+}
+
 async function processSsoReturn() {
   const url = new URL(window.location.href);
   const ssoToken = getSsoTokenFromUrl(url);
-  if (!ssoToken) return;
+  if (!ssoToken) {
+    await startSsoLogin();
+    return;
+  }
 
   try {
     const exchangeData = await exchangeSsoToken(ssoToken);
@@ -106,6 +126,8 @@ async function processSsoReturn() {
     if (exchangeData?.token) {
       token = exchangeData.token;
       localStorage.setItem(TOKEN_KEY, token);
+      localStorage.removeItem(AUTO_SSO_ATTEMPT_KEY);
+      sessionStorage.removeItem(SSO_RETRY_KEY);
       applyAuthState(true, exchangeData.user?.username);
       await fetchBookings();
       cleanupSsoParams(url);
@@ -120,6 +142,8 @@ async function processSsoReturn() {
     const user = await meResponse.json();
     token = ssoToken;
     localStorage.setItem(TOKEN_KEY, token);
+    localStorage.removeItem(AUTO_SSO_ATTEMPT_KEY);
+    sessionStorage.removeItem(SSO_RETRY_KEY);
     applyAuthState(true, user?.username);
     await fetchBookings();
 
@@ -127,8 +151,34 @@ async function processSsoReturn() {
     url.searchParams.delete('session');
     window.history.replaceState({}, document.title, url.toString());
   } catch (_error) {
-    statusText.textContent = 'SSO-Anmeldung fehlgeschlagen.';
+    if (sessionStorage.getItem(SSO_RETRY_KEY) !== '1') {
+      sessionStorage.setItem(SSO_RETRY_KEY, '1');
+      cleanupSsoParams(url);
+      await startSsoLogin({ force: true });
+      return;
+    }
+
+    cleanupSsoParams(url);
+    statusText.textContent = 'SSO-Anmeldung fehlgeschlagen. Bitte erneut anmelden.';
   }
+}
+
+async function exchangeSsoToken(ssoToken) {
+  const response = await fetch('/api/auth/sso-exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ssoToken }),
+  });
+
+  if (!response.ok) return null;
+  return response.json();
+}
+
+function cleanupSsoParams(url) {
+  url.searchParams.delete('ssoToken');
+  url.searchParams.delete('session');
+  url.hash = '';
+  window.history.replaceState({}, document.title, url.toString());
 }
 
 function getSsoTokenFromUrl(url) {
