@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login | Containerplanung</title>
+    <link rel="stylesheet" href="/public/style.css" />
+  </head>
+  <body>
+    <main class="login-shell">
+      <section class="login-card">
+        <h1>Containerplanung Login</h1>
+        <p class="topbar__subtitle">Anmeldung mit Benutzerdaten aus der PostgreSQL-Datenbank</p>
+
+        <form id="loginForm" class="form-grid">
+          <label>
+            Benutzername
+            <input id="username" name="username" autocomplete="username" required />
+          </label>
+          <label>
+            Passwort
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button class="btn btn--primary" type="submit">Anmelden</button>
+        </form>
+
+        <p id="loginStatus" class="hint-text" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <script type="module" src="/public/login.js"></script>
+  </body>
+</html>

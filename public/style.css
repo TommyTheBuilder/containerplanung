@@ -280,3 +280,25 @@ body.theme-dark select {
   .weekdays { display: none; }
   .day-card { min-height: 80px; }
 }
+
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.login-card {
+  width: min(460px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 1.2rem;
+}
+
+.login-card h1 {
+  margin-top: 0;
+  margin-bottom: 0.4rem;
+}

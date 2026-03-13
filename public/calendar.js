@@ -15,6 +15,13 @@ const moduleDashboardBtn = document.getElementById('moduleDashboardBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 
 const DARK_MODE_KEY = 'containerplanung.darkmode';
+const TOKEN_KEY = 'containerplanung-token';
+const token = localStorage.getItem(TOKEN_KEY) || '';
+
+if (!token) {
+  window.location.replace('/login.html');
+}
+
 const weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 let viewMode = 'month';
 let cursorDate = new Date();
@@ -286,9 +293,9 @@ moduleDashboardBtn?.addEventListener('click', () => {
 });
 
 logoutBtn?.addEventListener('click', () => {
-  localStorage.clear();
+  localStorage.removeItem(TOKEN_KEY);
   sessionStorage.clear();
-  window.location.href = '/';
+  window.location.href = '/login.html';
 });
 
 function createBookingModal({ onSave }) {

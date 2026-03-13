@@ -21,6 +21,12 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || 'ctpl11',
 });
 
+const authPool = new Pool({
+  connectionString:
+    process.env.AUTH_DB_URL ||
+    'postgresql://palettenuser:DEIN_STARKES_PASSWORT@localhost:5432/palettenmanagement',
+});
+
 app.use(express.json());
 app.use('/components', express.static(path.join(__dirname, 'components')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
@@ -81,6 +87,32 @@ app.post('/api/auth/sso-token', (req, res) => {
   );
 
   return res.json({ ssoToken: token });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  const normalizedUsername = String(username || '').trim().toLowerCase();
+  const plainPassword = String(password || '');
+
+  if (!normalizedUsername || !plainPassword) {
+    return res.status(400).json({ message: 'Benutzername und Passwort sind erforderlich.' });
+  }
+
+  const externalUser = await findExternalUser(normalizedUsername);
+  if (!externalUser) {
+    return res.status(401).json({ message: 'Benutzername oder Passwort ist ungültig.' });
+  }
+
+  const passwordValid = await verifyPassword(plainPassword, externalUser.passwordHash);
+  if (!passwordValid) {
+    return res.status(401).json({ message: 'Benutzername oder Passwort ist ungültig.' });
+  }
+
+  const role = normalizeRole(externalUser.role);
+  const user = await upsertSsoUser(externalUser.username, role);
+  const token = jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '10h' });
+
+  return res.json({ token, user });
 });
 
 app.get('/health', async (_req, res) => {
@@ -146,6 +178,56 @@ app.delete('/api/bookings/:id', requireAuth, authorizeRoles('admin', 'disponent'
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+async function findExternalUser(username) {
+  const candidateQueries = [
+    `SELECT username, password_hash AS "passwordHash", role
+     FROM app_users
+     WHERE LOWER(username) = $1
+     LIMIT 1`,
+    `SELECT username, password_hash AS "passwordHash", role
+     FROM users
+     WHERE LOWER(username) = $1
+     LIMIT 1`,
+    `SELECT username, password AS "passwordHash", role
+     FROM users
+     WHERE LOWER(username) = $1
+     LIMIT 1`,
+    `SELECT email AS username, password_hash AS "passwordHash", role
+     FROM users
+     WHERE LOWER(email) = $1
+     LIMIT 1`,
+    `SELECT email AS username, password AS "passwordHash", role
+     FROM users
+     WHERE LOWER(email) = $1
+     LIMIT 1`,
+  ];
+
+  for (const queryText of candidateQueries) {
+    try {
+      const result = await authPool.query(queryText, [username]);
+      if (result.rowCount) {
+        return {
+          username: String(result.rows[0].username || '').trim().toLowerCase(),
+          passwordHash: String(result.rows[0].passwordHash || ''),
+          role: result.rows[0].role,
+        };
+      }
+    } catch (_error) {
+      // Die externe Auth-Datenbank kann unterschiedliche Schemata nutzen.
+    }
+  }
+
+  return null;
+}
+
+async function verifyPassword(password, passwordHash) {
+  if (!passwordHash) return false;
+  if (passwordHash.startsWith('$2a$') || passwordHash.startsWith('$2b$') || passwordHash.startsWith('$2y$')) {
+    return bcrypt.compare(password, passwordHash);
+  }
+  return password === passwordHash;
+}
 
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || '';
