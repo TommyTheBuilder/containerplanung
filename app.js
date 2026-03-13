@@ -97,28 +97,65 @@ todayBtn.addEventListener('click', () => {
 
 async function processSsoReturn() {
   const url = new URL(window.location.href);
-  const ssoToken = url.searchParams.get('ssoToken');
+  const ssoToken = getSsoTokenFromUrl(url);
   if (!ssoToken) return;
 
   try {
-    const response = await fetch('/api/auth/sso-exchange', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ssoToken }),
+    const exchangeData = await exchangeSsoToken(ssoToken);
+
+    if (exchangeData?.token) {
+      token = exchangeData.token;
+      localStorage.setItem(TOKEN_KEY, token);
+      applyAuthState(true, exchangeData.user?.username);
+      await fetchBookings();
+      cleanupSsoParams(url);
+      return;
+    }
+
+    const meResponse = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${ssoToken}` },
     });
 
-    if (!response.ok) throw new Error('SSO-Exchange fehlgeschlagen');
-    const data = await response.json();
-    token = data.token;
+    if (!meResponse.ok) throw new Error('SSO-Anmeldung fehlgeschlagen');
+    const user = await meResponse.json();
+    token = ssoToken;
     localStorage.setItem(TOKEN_KEY, token);
-    applyAuthState(true, data.user?.username);
+    applyAuthState(true, user?.username);
     await fetchBookings();
-
-    url.searchParams.delete('ssoToken');
-    window.history.replaceState({}, document.title, url.toString());
+    cleanupSsoParams(url);
   } catch (_error) {
     statusText.textContent = 'SSO-Anmeldung fehlgeschlagen.';
   }
+}
+
+async function exchangeSsoToken(ssoToken) {
+  const response = await fetch('/api/auth/sso-exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ssoToken }),
+  });
+
+  if (!response.ok) return null;
+  return response.json();
+}
+
+function cleanupSsoParams(url) {
+  url.searchParams.delete('ssoToken');
+  url.searchParams.delete('session');
+  url.hash = '';
+  window.history.replaceState({}, document.title, url.toString());
+}
+
+function getSsoTokenFromUrl(url) {
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('session');
+  if (directToken) return directToken;
+
+  if (url.hash.startsWith('#')) {
+    const hashParams = new URLSearchParams(url.hash.slice(1));
+    return hashParams.get('ssoToken') || hashParams.get('session') || '';
+  }
+
+  return '';
 }
 
 async function fetchBookings() {
