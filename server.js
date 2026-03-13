@@ -89,19 +89,62 @@ app.post('/api/auth/sso-token', (req, res) => {
   return res.json({ ssoToken: token });
 });
 
-app.post('/api/auth/sso-forward-token', requireAuth, async (req, res) => {
+app.post('/api/auth/sso-forward-token', async (req, res) => {
   if (!SHARED_AUTH_SECRET) {
     return res.status(500).json({ message: 'SHARED_AUTH_SECRET ist nicht konfiguriert.' });
   }
 
-  const username = String(req.user?.username || '').trim().toLowerCase();
-  if (!username) {
-    return res.status(400).json({ message: 'Kein Benutzername für SSO-Weiterleitung verfügbar.' });
+  const tokenFromBodyOrQuery = extractSsoTokenFromBodyOrQuery(req);
+  const bearerToken = extractBearerToken(req);
+
+  if (!tokenFromBodyOrQuery && bearerToken) {
+    const legacyLocalUser = verifyLocalJwt(bearerToken);
+    if (legacyLocalUser) {
+      const role = normalizeRole(legacyLocalUser.role);
+      const ssoToken = jwt.sign({ username: legacyLocalUser.username, role }, SHARED_AUTH_SECRET, { expiresIn: '120s' });
+      return res.json({ ssoToken });
+    }
   }
 
-  const role = normalizeRole(req.user?.role);
-  const ssoToken = jwt.sign({ username, role }, SHARED_AUTH_SECRET, { expiresIn: '120s' });
-  return res.json({ ssoToken });
+  const incomingToken = tokenFromBodyOrQuery || bearerToken;
+
+  if (!incomingToken) {
+    logSsoIssue('MISSING_TOKEN', { route: req.path });
+    return res.status(400).json({ message: 'Kein SSO-Token gefunden (body/query/auth header).' });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(incomingToken, SHARED_AUTH_SECRET, { algorithms: ['HS256'] });
+  } catch (error) {
+    const reasonCode = mapJwtVerifyErrorToReasonCode(error);
+    logSsoIssue(reasonCode, { route: req.path });
+    return res.status(401).json({ message: 'SSO-Token ungültig oder abgelaufen.' });
+  }
+
+  const username = resolveSsoUsername(payload);
+  if (!username) {
+    logSsoIssue('JWT_MISSING_USERNAME', { route: req.path });
+    return res.status(401).json({ message: 'SSO-Token enthält keinen Benutzernamen.' });
+  }
+
+  if (typeof payload.iat === 'number') {
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.iat > now + 60) {
+      logSsoIssue('JWT_INVALID_IAT', { route: req.path });
+      return res.status(401).json({ message: 'SSO-Token ist zeitlich ungültig.' });
+    }
+  }
+
+  try {
+    const role = resolveSsoRole(payload);
+    const user = await upsertSsoUser(username, role);
+    const token = jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '10h' });
+    return res.json({ token, user, redirectTo: '/dashboard' });
+  } catch (_error) {
+    logSsoIssue('USER_NOT_FOUND', { route: req.path, username });
+    return res.status(500).json({ message: 'Lokale Session konnte nicht erstellt werden.' });
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -266,6 +309,68 @@ function authorizeRoles(...roles) {
 
 function normalizeRole(role) {
   return ['admin', 'disponent'].includes(role) ? role : 'disponent';
+}
+
+function extractSsoToken(req) {
+  return extractSsoTokenFromBodyOrQuery(req) || extractBearerToken(req);
+}
+
+function extractSsoTokenFromBodyOrQuery(req) {
+  const body = req.body || {};
+  const query = req.query || {};
+
+  return (
+    body.token
+    || body.ssoToken
+    || body.session
+    || query.token
+    || query.ssoToken
+    || query.session
+    || ''
+  );
+}
+
+function extractBearerToken(req) {
+  const authHeader = req.headers.authorization || '';
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+}
+
+function resolveSsoUsername(payload) {
+  return String(payload?.username || payload?.user || payload?.sub || '').trim().toLowerCase();
+}
+
+function resolveSsoRole(payload) {
+  const directRole = payload?.role;
+  if (directRole) return normalizeRole(directRole);
+
+  if (Array.isArray(payload?.roles) && payload.roles.length > 0) {
+    const firstRole = payload.roles.find((role) => ['admin', 'disponent'].includes(role));
+    if (firstRole) return normalizeRole(firstRole);
+  }
+
+  return normalizeRole(undefined);
+}
+
+function mapJwtVerifyErrorToReasonCode(error) {
+  if (error?.name === 'TokenExpiredError') return 'JWT_EXPIRED';
+  if (error?.name === 'NotBeforeError') return 'JWT_NOT_ACTIVE';
+  if (error?.name === 'JsonWebTokenError') {
+    if (String(error.message || '').includes('signature')) return 'JWT_INVALID_SIGNATURE';
+    return 'JWT_INVALID';
+  }
+  return 'JWT_VERIFY_ERROR';
+}
+
+function logSsoIssue(reasonCode, details = {}) {
+  console.warn('[SSO_FORWARD_INTAKE]', { reasonCode, ...details });
+}
+
+function verifyLocalJwt(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function upsertSsoUser(username, role) {

@@ -131,10 +131,10 @@ async function startSsoLogin(currentUrl = new URL(window.location.href)) {
 
 async function exchangeSsoToken(ssoToken) {
   try {
-    const response = await fetch('/api/auth/sso-exchange', {
+    const response = await fetch('/api/auth/sso-forward-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ssoToken }),
+      body: JSON.stringify({ token: ssoToken }),
     });
 
     if (!response.ok) return '';
@@ -148,17 +148,18 @@ async function exchangeSsoToken(ssoToken) {
 function cleanupSsoParams(url) {
   url.searchParams.delete('ssoToken');
   url.searchParams.delete('session');
+  url.searchParams.delete('token');
   url.hash = '';
   window.history.replaceState({}, document.title, url.toString());
 }
 
 function getSsoTokenFromUrl(url) {
-  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('session');
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session');
   if (directToken) return directToken;
 
   if (url.hash.startsWith('#')) {
     const hashParams = new URLSearchParams(url.hash.slice(1));
-    return hashParams.get('ssoToken') || hashParams.get('session') || '';
+    return hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '';
   }
 
   return '';
