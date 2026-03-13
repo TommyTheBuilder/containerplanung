@@ -17,7 +17,6 @@ const todayBtn = document.getElementById('todayBtn');
 const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const TOKEN_KEY = 'containerplanung-token';
 const AUTO_SSO_ATTEMPT_KEY = 'containerplanung-auto-sso-attempted';
-const SSO_RETRY_KEY = 'containerplanung-sso-retry';
 let currentDate = new Date();
 let bookings = [];
 let token = localStorage.getItem(TOKEN_KEY) || '';
@@ -127,7 +126,6 @@ async function processSsoReturn() {
       token = exchangeData.token;
       localStorage.setItem(TOKEN_KEY, token);
       localStorage.removeItem(AUTO_SSO_ATTEMPT_KEY);
-      sessionStorage.removeItem(SSO_RETRY_KEY);
       applyAuthState(true, exchangeData.user?.username);
       await fetchBookings();
       cleanupSsoParams(url);
@@ -143,7 +141,6 @@ async function processSsoReturn() {
     token = ssoToken;
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.removeItem(AUTO_SSO_ATTEMPT_KEY);
-    sessionStorage.removeItem(SSO_RETRY_KEY);
     applyAuthState(true, user?.username);
     await fetchBookings();
 
