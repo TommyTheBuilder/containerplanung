@@ -30,7 +30,7 @@ const bookings = [
     kennzeichen: 'BGL-AB123',
     auftrag: '845233',
     date: '2026-03-12',
-    type: 'delivery',
+    type: 'hand_unload',
     attachments: [],
   },
   {
@@ -40,7 +40,7 @@ const bookings = [
     kennzeichen: 'M-CT901',
     auftrag: '801116',
     date: toYmd(new Date()),
-    type: 'container',
+    type: 'direct_unload',
     attachments: [],
   },
 ];
@@ -200,7 +200,8 @@ function renderGrid() {
     dayCard.append(dateNode);
 
     const matches = bookings.filter((item) => item.date === ymd);
-    matches.forEach((booking) => dayCard.append(createBookingCard(booking)));
+    const isCompact = matches.length > 1;
+    matches.forEach((booking) => dayCard.append(createBookingCard(booking, { compact: isCompact })));
 
     dayCard.addEventListener('click', (event) => {
       if (event.target.closest('.booking-card')) return;
@@ -228,17 +229,22 @@ function renderGrid() {
   });
 }
 
-function createBookingCard(booking) {
+function createBookingCard(booking, { compact = false } = {}) {
   const card = document.createElement('div');
-  card.className = 'booking-card';
+  card.className = `booking-card ${compact ? 'booking-card--compact' : ''}`.trim();
   card.draggable = true;
   card.dataset.type = booking.type;
-  card.innerHTML = `
-    <strong>🚛 ${escapeHtml(booking.title)}</strong>
-    Container: ${escapeHtml(booking.container)}<br />
-    Kennzeichen: ${escapeHtml(booking.kennzeichen)}<br />
-    Auftrag: ${escapeHtml(booking.auftrag)}
-  `;
+  card.innerHTML = compact
+    ? `
+      <strong>${escapeHtml(booking.title)}</strong>
+      Container: ${escapeHtml(booking.container)}
+    `
+    : `
+      <strong>🚛 ${escapeHtml(booking.title)}</strong>
+      Container: ${escapeHtml(booking.container)}<br />
+      Kennzeichen: ${escapeHtml(booking.kennzeichen)}<br />
+      Auftrag: ${escapeHtml(booking.auftrag)}
+    `;
 
   card.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -324,6 +330,16 @@ function createId() {
   return `id-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 }
 
+function getBookingTypeLabel(type) {
+  const labels = {
+    direct_unload: 'Container Direktentladung',
+    hand_unload: 'Container Handentladung',
+    truck_delivery: 'LKW Anlieferung',
+    special_storage: 'Sonderarbeiten Lager',
+  };
+  return labels[type] || type;
+}
+
 function applyInitialTheme() {
   const isDark = localStorage.getItem(DARK_MODE_KEY) === '1';
   document.body.classList.toggle('theme-dark', isDark);
@@ -399,10 +415,10 @@ function createBookingModal({ onSave }) {
         <label>Datum<input type="date" name="date" required /></label>
         <label>Typ
           <select name="type">
-            <option value="container">Container (Blau)</option>
-            <option value="delivery">Lieferung (Grün)</option>
-            <option value="service">Service (Grau)</option>
-            <option value="problem">Problem / Verzögerung (Rot)</option>
+            <option value="direct_unload">Container Direktentladung (Blau)</option>
+            <option value="hand_unload">Container Handentladung (Grün)</option>
+            <option value="truck_delivery">LKW Anlieferung (Grau)</option>
+            <option value="special_storage">Sonderarbeiten Lager (Rot)</option>
           </select>
         </label>
         <p class="hint-text">Hinweis: Fotos/Dateien können nach dem Anlegen nur innerhalb der Buchungsdetails hochgeladen werden.</p>
@@ -486,7 +502,7 @@ function createBookingDetailsModal({ onBookingUpdate }) {
       <article><span>Kennzeichen</span><strong>${escapeHtml(currentBooking.kennzeichen)}</strong></article>
       <article><span>Auftrag</span><strong>${escapeHtml(currentBooking.auftrag)}</strong></article>
       <article><span>Datum</span><strong>${escapeHtml(currentBooking.date)}</strong></article>
-      <article><span>Typ</span><strong>${escapeHtml(currentBooking.type)}</strong></article>
+      <article><span>Typ</span><strong>${escapeHtml(getBookingTypeLabel(currentBooking.type))}</strong></article>
     `;
 
     attachmentList.innerHTML = '';
