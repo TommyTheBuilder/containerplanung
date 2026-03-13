@@ -133,22 +133,7 @@ async function processSsoReturn() {
       return;
     }
 
-    const meResponse = await fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${ssoToken}` },
-    });
-
-    if (!meResponse.ok) throw new Error('SSO-Anmeldung fehlgeschlagen');
-    const user = await meResponse.json();
-    token = ssoToken;
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.removeItem(AUTO_SSO_ATTEMPT_KEY);
-    sessionStorage.removeItem(SSO_RETRY_KEY);
-    applyAuthState(true, user?.username);
-    await fetchBookings();
-
-    url.searchParams.delete('ssoToken');
-    url.searchParams.delete('session');
-    window.history.replaceState({}, document.title, url.toString());
+    throw new Error('SSO-Anmeldung fehlgeschlagen');
   } catch (error) {
     const exchangeMisconfigured = error?.code === 'SSO_EXCHANGE_NOT_CONFIGURED';
 
@@ -158,7 +143,6 @@ async function processSsoReturn() {
       return;
     }
 
-  } catch (_error) {
     if (sessionStorage.getItem(SSO_RETRY_KEY) !== '1') {
       sessionStorage.setItem(SSO_RETRY_KEY, '1');
       cleanupSsoParams(url);
@@ -172,10 +156,10 @@ async function processSsoReturn() {
 }
 
 async function exchangeSsoToken(ssoToken) {
-  const response = await fetch('/api/auth/sso-exchange', {
+  const response = await fetch('/api/auth/sso-forward-token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ssoToken }),
+    body: JSON.stringify({ token: ssoToken }),
   });
 
   if (!response.ok) {
@@ -203,17 +187,18 @@ async function exchangeSsoToken(ssoToken) {
 function cleanupSsoParams(url) {
   url.searchParams.delete('ssoToken');
   url.searchParams.delete('session');
+  url.searchParams.delete('token');
   url.hash = '';
   window.history.replaceState({}, document.title, url.toString());
 }
 
 function getSsoTokenFromUrl(url) {
-  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('session');
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session');
   if (directToken) return directToken;
 
   if (url.hash.startsWith('#')) {
     const hashParams = new URLSearchParams(url.hash.slice(1));
-    return hashParams.get('ssoToken') || hashParams.get('session') || '';
+    return hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '';
   }
 
   return '';
