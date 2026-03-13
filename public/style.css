@@ -158,10 +158,19 @@ body.theme-dark {
   line-height: 1.28;
 }
 .booking-card strong { display: block; margin-bottom: 0.22rem; font-size: 0.82rem; }
-.booking-card[data-type='container'] { background: var(--container); }
-.booking-card[data-type='delivery'] { background: var(--delivery); }
-.booking-card[data-type='service'] { background: var(--service); }
-.booking-card[data-type='problem'] { background: var(--problem); }
+.booking-card--compact {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 0.34rem 0.4rem;
+}
+.booking-card--compact strong {
+  margin-bottom: 0.14rem;
+  font-size: 0.75rem;
+}
+.booking-card[data-type='direct_unload'] { background: var(--container); }
+.booking-card[data-type='hand_unload'] { background: var(--delivery); }
+.booking-card[data-type='truck_delivery'] { background: var(--service); }
+.booking-card[data-type='special_storage'] { background: var(--problem); }
 .day-card.is-drop-target { border-color: #2563eb; background: #eff6ff; }
 
 .modal-overlay {
