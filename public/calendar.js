@@ -16,11 +16,7 @@ const logoutBtn = document.getElementById('logoutBtn');
 
 const DARK_MODE_KEY = 'containerplanung.darkmode';
 const TOKEN_KEY = 'containerplanung-token';
-const token = localStorage.getItem(TOKEN_KEY) || '';
-
-if (!token) {
-  window.location.replace('/login.html');
-}
+const SSO_SOURCE_HOST = 'test.paletten-ms.de';
 
 const weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 let viewMode = 'month';
@@ -66,8 +62,8 @@ const detailsModal = createBookingDetailsModal({
 
 document.body.append(bookingModal.overlay);
 document.body.append(detailsModal.overlay);
-applyInitialTheme();
-render();
+
+initApp();
 
 function render() {
   if (!weekdayHeader || !calendarGrid) return;
@@ -75,6 +71,97 @@ function render() {
   renderRangeLabel();
   renderGrid();
   syncViewButtons();
+}
+
+async function initApp() {
+  const authenticated = await ensureAuthenticated();
+  if (!authenticated) return;
+  applyInitialTheme();
+  render();
+}
+
+async function ensureAuthenticated() {
+  const existingToken = localStorage.getItem(TOKEN_KEY) || '';
+  if (existingToken) return true;
+
+  const url = new URL(window.location.href);
+  const incomingSsoToken = getSsoTokenFromUrl(url);
+  const cameFromSsoHost = didComeFromSsoHost();
+
+  if (incomingSsoToken) {
+    const exchangedToken = await exchangeSsoToken(incomingSsoToken);
+    if (exchangedToken) {
+      localStorage.setItem(TOKEN_KEY, exchangedToken);
+      cleanupSsoParams(url);
+      return true;
+    }
+  }
+
+  if (cameFromSsoHost) {
+    await startSsoLogin(url);
+    return false;
+  }
+
+  window.location.replace('/login.html');
+  return false;
+}
+
+function didComeFromSsoHost() {
+  if (!document.referrer) return false;
+  try {
+    const referrer = new URL(document.referrer);
+    return referrer.hostname === SSO_SOURCE_HOST;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function startSsoLogin(currentUrl = new URL(window.location.href)) {
+  try {
+    const response = await fetch('/api/auth/sso/config');
+    const data = await response.json();
+    const callbackUrl = `${currentUrl.origin}${currentUrl.pathname}`;
+    const loginUrl = new URL(data.loginUrl);
+    loginUrl.searchParams.set('returnUrl', callbackUrl);
+    window.location.replace(loginUrl.toString());
+  } catch (_error) {
+    window.location.replace('/login.html');
+  }
+}
+
+async function exchangeSsoToken(ssoToken) {
+  try {
+    const response = await fetch('/api/auth/sso-exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssoToken }),
+    });
+
+    if (!response.ok) return '';
+    const body = await response.json();
+    return body?.token || '';
+  } catch (_error) {
+    return '';
+  }
+}
+
+function cleanupSsoParams(url) {
+  url.searchParams.delete('ssoToken');
+  url.searchParams.delete('session');
+  url.hash = '';
+  window.history.replaceState({}, document.title, url.toString());
+}
+
+function getSsoTokenFromUrl(url) {
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('session');
+  if (directToken) return directToken;
+
+  if (url.hash.startsWith('#')) {
+    const hashParams = new URLSearchParams(url.hash.slice(1));
+    return hashParams.get('ssoToken') || hashParams.get('session') || '';
+  }
+
+  return '';
 }
 
 function renderWeekdays() {
