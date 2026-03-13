@@ -46,6 +46,10 @@ const bookings = [
 ];
 
 const bookingModal = createBookingModal({
+  },
+];
+
+const modal = createBookingModal({
   onSave(newBooking) {
     bookings.push(newBooking);
     render();
@@ -64,6 +68,7 @@ document.body.append(bookingModal.overlay);
 document.body.append(detailsModal.overlay);
 
 applyInitialTheme();
+document.body.append(modal.overlay);
 
 function render() {
   renderWeekdays();
@@ -112,6 +117,7 @@ function renderGrid() {
     dayCard.addEventListener('click', (event) => {
       if (event.target.closest('.booking-card')) return;
       bookingModal.open(ymd);
+      modal.open(ymd);
     });
 
     dayCard.addEventListener('dragover', (event) => {
@@ -165,11 +171,14 @@ function buildMonthCells(baseDate) {
   const month = baseDate.getMonth();
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
+
   const startWeekDay = (monthStart.getDay() + 6) % 7;
   const cells = [];
 
   for (let i = startWeekDay; i > 0; i -= 1) {
     cells.push({ date: new Date(year, month, 1 - i), isCurrentMonth: false });
+    const prevDate = new Date(year, month, 1 - i);
+    cells.push({ date: prevDate, isCurrentMonth: false });
   }
 
   for (let day = 1; day <= monthEnd.getDate(); day += 1) {
@@ -221,6 +230,8 @@ function toYmd(date) {
 
 function isToday(date) {
   return toYmd(new Date()) === toYmd(date);
+  const now = new Date();
+  return toYmd(now) === toYmd(date);
 }
 
 function escapeHtml(value) {
@@ -257,6 +268,11 @@ prevBtn.addEventListener('click', () => {
   cursorDate = new Date(cursorDate);
   if (viewMode === 'month') cursorDate.setMonth(cursorDate.getMonth() - 1);
   else cursorDate.setDate(cursorDate.getDate() - 7);
+  if (viewMode === 'month') {
+    cursorDate.setMonth(cursorDate.getMonth() - 1);
+  } else {
+    cursorDate.setDate(cursorDate.getDate() - 7);
+  }
   render();
 });
 
@@ -293,6 +309,14 @@ logoutBtn.addEventListener('click', () => {
   localStorage.clear();
   sessionStorage.clear();
   window.location.reload();
+});
+
+  if (viewMode === 'month') {
+    cursorDate.setMonth(cursorDate.getMonth() + 1);
+  } else {
+    cursorDate.setDate(cursorDate.getDate() + 7);
+  }
+  render();
 });
 
 render();
