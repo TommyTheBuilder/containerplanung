@@ -20,10 +20,20 @@
             <button id="monthViewBtn" class="btn btn--primary is-active">Monat</button>
             <button id="weekViewBtn" class="btn btn--ghost">Woche</button>
           </div>
+
           <div class="nav-arrows">
             <button id="prevBtn" class="btn btn--icon" aria-label="Zurück">◀</button>
             <h2 id="rangeLabel"></h2>
             <button id="nextBtn" class="btn btn--icon" aria-label="Vor">▶</button>
+          </div>
+
+          <div class="gear-menu" id="gearMenu">
+            <button class="btn btn--icon" id="gearMenuToggle" aria-label="Einstellungen">⚙</button>
+            <div class="gear-menu__dropdown" id="gearMenuDropdown">
+              <button class="gear-menu__item" id="darkModeToggle">Dark Mode</button>
+              <button class="gear-menu__item" id="moduleDashboardBtn">Modul-Dashboard</button>
+              <button class="gear-menu__item gear-menu__item--danger" id="logoutBtn">Logout</button>
+            </div>
           </div>
         </div>
       </header>

@@ -1,4 +1,5 @@
 import { createBookingModal } from '/components/bookingModal.js';
+import { createBookingDetailsModal } from '/components/bookingDetailsModal.js';
 
 const weekdayHeader = document.getElementById('weekdayHeader');
 const calendarGrid = document.getElementById('calendarGrid');
@@ -9,6 +10,14 @@ const weekViewBtn = document.getElementById('weekViewBtn');
 const prevBtn = document.getElementById('prevBtn');
 const nextBtn = document.getElementById('nextBtn');
 
+const gearMenu = document.getElementById('gearMenu');
+const gearMenuToggle = document.getElementById('gearMenuToggle');
+const gearMenuDropdown = document.getElementById('gearMenuDropdown');
+const darkModeToggle = document.getElementById('darkModeToggle');
+const moduleDashboardBtn = document.getElementById('moduleDashboardBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+
+const DARK_MODE_KEY = 'containerplanung.darkmode';
 const weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 let viewMode = 'month';
 let cursorDate = new Date();
@@ -22,6 +31,7 @@ const bookings = [
     auftrag: '845233',
     date: '2026-03-12',
     type: 'delivery',
+    attachments: [],
   },
   {
     id: crypto.randomUUID(),
@@ -31,6 +41,11 @@ const bookings = [
     auftrag: '801116',
     date: toYmd(new Date()),
     type: 'container',
+    attachments: [],
+  },
+];
+
+const bookingModal = createBookingModal({
   },
 ];
 
@@ -40,6 +55,19 @@ const modal = createBookingModal({
     render();
   },
 });
+
+const detailsModal = createBookingDetailsModal({
+  onBookingUpdate(updated) {
+    const index = bookings.findIndex((booking) => booking.id === updated.id);
+    if (index >= 0) bookings[index] = updated;
+    render();
+  },
+});
+
+document.body.append(bookingModal.overlay);
+document.body.append(detailsModal.overlay);
+
+applyInitialTheme();
 document.body.append(modal.overlay);
 
 function render() {
@@ -88,6 +116,7 @@ function renderGrid() {
 
     dayCard.addEventListener('click', (event) => {
       if (event.target.closest('.booking-card')) return;
+      bookingModal.open(ymd);
       modal.open(ymd);
     });
 
@@ -124,6 +153,11 @@ function createBookingCard(booking) {
     Auftrag: ${escapeHtml(booking.auftrag)}
   `;
 
+  card.addEventListener('click', (event) => {
+    event.stopPropagation();
+    detailsModal.open(booking);
+  });
+
   card.addEventListener('dragstart', (event) => {
     event.dataTransfer.setData('text/booking-id', booking.id);
     event.dataTransfer.effectAllowed = 'move';
@@ -142,6 +176,7 @@ function buildMonthCells(baseDate) {
   const cells = [];
 
   for (let i = startWeekDay; i > 0; i -= 1) {
+    cells.push({ date: new Date(year, month, 1 - i), isCurrentMonth: false });
     const prevDate = new Date(year, month, 1 - i);
     cells.push({ date: prevDate, isCurrentMonth: false });
   }
@@ -194,6 +229,7 @@ function toYmd(date) {
 }
 
 function isToday(date) {
+  return toYmd(new Date()) === toYmd(date);
   const now = new Date();
   return toYmd(now) === toYmd(date);
 }
@@ -205,6 +241,12 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function applyInitialTheme() {
+  const isDark = localStorage.getItem(DARK_MODE_KEY) === '1';
+  document.body.classList.toggle('theme-dark', isDark);
+  darkModeToggle.textContent = isDark ? 'Light Mode' : 'Dark Mode';
 }
 
 todayBtn.addEventListener('click', () => {
@@ -224,6 +266,8 @@ weekViewBtn.addEventListener('click', () => {
 
 prevBtn.addEventListener('click', () => {
   cursorDate = new Date(cursorDate);
+  if (viewMode === 'month') cursorDate.setMonth(cursorDate.getMonth() - 1);
+  else cursorDate.setDate(cursorDate.getDate() - 7);
   if (viewMode === 'month') {
     cursorDate.setMonth(cursorDate.getMonth() - 1);
   } else {
@@ -234,6 +278,39 @@ prevBtn.addEventListener('click', () => {
 
 nextBtn.addEventListener('click', () => {
   cursorDate = new Date(cursorDate);
+  if (viewMode === 'month') cursorDate.setMonth(cursorDate.getMonth() + 1);
+  else cursorDate.setDate(cursorDate.getDate() + 7);
+  render();
+});
+
+gearMenuToggle.addEventListener('click', (event) => {
+  event.stopPropagation();
+  gearMenu.classList.toggle('is-open');
+});
+
+document.addEventListener('click', () => gearMenu.classList.remove('is-open'));
+
+gearMenuDropdown.addEventListener('click', (event) => event.stopPropagation());
+
+darkModeToggle.addEventListener('click', () => {
+  const enabled = !document.body.classList.contains('theme-dark');
+  document.body.classList.toggle('theme-dark', enabled);
+  localStorage.setItem(DARK_MODE_KEY, enabled ? '1' : '0');
+  darkModeToggle.textContent = enabled ? 'Light Mode' : 'Dark Mode';
+  gearMenu.classList.remove('is-open');
+});
+
+moduleDashboardBtn.addEventListener('click', () => {
+  window.open('https://test.paletten-ms.de/', '_blank', 'noopener,noreferrer');
+  gearMenu.classList.remove('is-open');
+});
+
+logoutBtn.addEventListener('click', () => {
+  localStorage.clear();
+  sessionStorage.clear();
+  window.location.reload();
+});
+
   if (viewMode === 'month') {
     cursorDate.setMonth(cursorDate.getMonth() + 1);
   } else {

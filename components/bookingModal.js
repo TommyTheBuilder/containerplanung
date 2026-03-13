@@ -18,6 +18,7 @@ export function createBookingModal({ onSave }) {
             <option value="problem">Problem / Verzögerung (Rot)</option>
           </select>
         </label>
+        <p class="hint-text">Hinweis: Fotos/Dateien können nach dem Anlegen nur innerhalb der Buchungsdetails hochgeladen werden.</p>
         <div class="modal-actions">
           <button type="button" class="btn" data-close>Abbrechen</button>
           <button type="submit" class="btn btn--primary">Speichern</button>
@@ -55,6 +56,7 @@ export function createBookingModal({ onSave }) {
       auftrag: data.get('auftrag').toString().trim(),
       date: data.get('date').toString(),
       type: data.get('type').toString(),
+      attachments: [],
     });
     close();
   });
