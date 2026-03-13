@@ -8,7 +8,6 @@ const authCard = document.getElementById('authCard');
 const bookingCard = document.getElementById('bookingCard');
 const calendarCard = document.getElementById('calendarCard');
 const logoutBtn = document.getElementById('logoutBtn');
-const ssoLoginBtn = document.getElementById('ssoLoginBtn');
 
 const prevMonthBtn = document.getElementById('prevMonth');
 const nextMonthBtn = document.getElementById('nextMonth');
@@ -17,6 +16,7 @@ const todayBtn = document.getElementById('todayBtn');
 const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const TOKEN_KEY = 'containerplanung-token';
 const AUTO_SSO_ATTEMPT_KEY = 'containerplanung-auto-sso-attempted';
+const SSO_RETRY_KEY = 'containerplanung-sso-retry';
 let currentDate = new Date();
 let bookings = [];
 let token = localStorage.getItem(TOKEN_KEY) || '';
@@ -126,6 +126,7 @@ async function processSsoReturn() {
       token = exchangeData.token;
       localStorage.setItem(TOKEN_KEY, token);
       localStorage.removeItem(AUTO_SSO_ATTEMPT_KEY);
+      sessionStorage.removeItem(SSO_RETRY_KEY);
       applyAuthState(true, exchangeData.user?.username);
       await fetchBookings();
       cleanupSsoParams(url);
@@ -141,12 +142,22 @@ async function processSsoReturn() {
     token = ssoToken;
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.removeItem(AUTO_SSO_ATTEMPT_KEY);
+    sessionStorage.removeItem(SSO_RETRY_KEY);
     applyAuthState(true, user?.username);
     await fetchBookings();
 
     url.searchParams.delete('ssoToken');
     url.searchParams.delete('session');
     window.history.replaceState({}, document.title, url.toString());
+  } catch (error) {
+    const exchangeMisconfigured = error?.code === 'SSO_EXCHANGE_NOT_CONFIGURED';
+
+    if (exchangeMisconfigured) {
+      cleanupSsoParams(url);
+      statusText.textContent = 'SSO ist derzeit nicht vollständig konfiguriert. Bitte Administrator informieren.';
+      return;
+    }
+
   } catch (_error) {
     if (sessionStorage.getItem(SSO_RETRY_KEY) !== '1') {
       sessionStorage.setItem(SSO_RETRY_KEY, '1');
@@ -166,6 +177,24 @@ async function exchangeSsoToken(ssoToken) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ssoToken }),
   });
+
+  if (!response.ok) {
+    let message = '';
+    try {
+      const body = await response.json();
+      message = body?.message || '';
+    } catch (_error) {
+      message = '';
+    }
+
+    if (response.status === 500 && message.includes('SHARED_AUTH_SECRET')) {
+      const error = new Error(message);
+      error.code = 'SSO_EXCHANGE_NOT_CONFIGURED';
+      throw error;
+    }
+
+    return null;
+  }
 
   if (!response.ok) return null;
   return response.json();
