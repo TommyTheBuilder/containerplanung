@@ -148,8 +148,34 @@ async function processSsoReturn() {
     url.searchParams.delete('session');
     window.history.replaceState({}, document.title, url.toString());
   } catch (_error) {
-    statusText.textContent = 'SSO-Anmeldung fehlgeschlagen.';
+    if (sessionStorage.getItem(SSO_RETRY_KEY) !== '1') {
+      sessionStorage.setItem(SSO_RETRY_KEY, '1');
+      cleanupSsoParams(url);
+      await startSsoLogin({ force: true });
+      return;
+    }
+
+    cleanupSsoParams(url);
+    statusText.textContent = 'SSO-Anmeldung fehlgeschlagen. Bitte erneut anmelden.';
   }
+}
+
+async function exchangeSsoToken(ssoToken) {
+  const response = await fetch('/api/auth/sso-exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ssoToken }),
+  });
+
+  if (!response.ok) return null;
+  return response.json();
+}
+
+function cleanupSsoParams(url) {
+  url.searchParams.delete('ssoToken');
+  url.searchParams.delete('session');
+  url.hash = '';
+  window.history.replaceState({}, document.title, url.toString());
 }
 
 function getSsoTokenFromUrl(url) {
