@@ -101,17 +101,26 @@ async function processSsoReturn() {
   if (!ssoToken) return;
 
   try {
-    const response = await fetch('/api/auth/sso-exchange', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ssoToken }),
+    const exchangeData = await exchangeSsoToken(ssoToken);
+
+    if (exchangeData?.token) {
+      token = exchangeData.token;
+      localStorage.setItem(TOKEN_KEY, token);
+      applyAuthState(true, exchangeData.user?.username);
+      await fetchBookings();
+      cleanupSsoParams(url);
+      return;
+    }
+
+    const meResponse = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${ssoToken}` },
     });
 
-    if (!response.ok) throw new Error('SSO-Exchange fehlgeschlagen');
-    const data = await response.json();
-    token = data.token;
+    if (!meResponse.ok) throw new Error('SSO-Anmeldung fehlgeschlagen');
+    const user = await meResponse.json();
+    token = ssoToken;
     localStorage.setItem(TOKEN_KEY, token);
-    applyAuthState(true, data.user?.username);
+    applyAuthState(true, user?.username);
     await fetchBookings();
 
     url.searchParams.delete('ssoToken');
