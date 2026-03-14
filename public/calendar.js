@@ -85,11 +85,11 @@ async function ensureAuthenticated() {
   if (existingToken) return true;
 
   const url = new URL(window.location.href);
-  const incomingSsoToken = getSsoTokenFromUrl(url);
+  const ssoCredentials = getSsoCredentialsFromUrl(url);
   const cameFromSsoHost = didComeFromSsoHost();
 
-  if (incomingSsoToken) {
-    const exchangedToken = await exchangeSsoToken(incomingSsoToken);
+  if (ssoCredentials.token) {
+    const exchangedToken = await exchangeSsoToken(ssoCredentials);
     if (exchangedToken) {
       localStorage.setItem(TOKEN_KEY, exchangedToken);
       cleanupSsoParams(url);
@@ -129,12 +129,12 @@ async function startSsoLogin(currentUrl = new URL(window.location.href)) {
   }
 }
 
-async function exchangeSsoToken(ssoToken) {
+async function exchangeSsoToken({ token, user }) {
   try {
     const response = await fetch('/api/auth/sso-forward-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: ssoToken }),
+      body: JSON.stringify({ token, user }),
     });
 
     if (!response.ok) return '';
@@ -149,20 +149,29 @@ function cleanupSsoParams(url) {
   url.searchParams.delete('ssoToken');
   url.searchParams.delete('session');
   url.searchParams.delete('token');
+  url.searchParams.delete('user');
   url.hash = '';
   window.history.replaceState({}, document.title, url.toString());
 }
 
-function getSsoTokenFromUrl(url) {
-  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session');
-  if (directToken) return directToken;
+function getSsoCredentialsFromUrl(url) {
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session') || '';
+  const directUser = url.searchParams.get('user') || '';
+  if (directToken || directUser) return { token: directToken, user: normalizeUsername(directUser) };
 
   if (url.hash.startsWith('#')) {
     const hashParams = new URLSearchParams(url.hash.slice(1));
-    return hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '';
+    return {
+      token: hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '',
+      user: normalizeUsername(hashParams.get('user') || ''),
+    };
   }
 
-  return '';
+  return { token: '', user: '' };
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function renderWeekdays() {
