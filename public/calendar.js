@@ -29,6 +29,7 @@ const bookings = [
     container: 'CAIU3160880',
     kennzeichen: 'BGL-AB123',
     auftrag: '845233',
+    lager: 'Halle A',
     date: '2026-03-12',
     type: 'hand_unload',
     attachments: [],
@@ -39,6 +40,7 @@ const bookings = [
     container: 'MSKU4074217',
     kennzeichen: 'M-CT901',
     auftrag: '801116',
+    lager: 'Halle B',
     date: toYmd(new Date()),
     type: 'direct_unload',
     attachments: [],
@@ -253,7 +255,8 @@ function createBookingCard(booking, { compact = false } = {}) {
       <strong>🚛 ${escapeHtml(booking.title)}</strong>
       Container: ${escapeHtml(booking.container)}<br />
       Kennzeichen: ${escapeHtml(booking.kennzeichen)}<br />
-      Auftrag: ${escapeHtml(booking.auftrag)}
+      Auftrag: ${escapeHtml(booking.auftrag)}<br />
+      Lager: ${escapeHtml(booking.lager || '-')}
     `;
 
   card.addEventListener('click', (event) => {
@@ -383,6 +386,8 @@ function getUsernameFromJwt(rawToken) {
 
 todayBtn?.addEventListener('click', () => {
   cursorDate = new Date();
+  bookingModal.close();
+  detailsModal.close();
   render();
 });
 
@@ -475,6 +480,7 @@ function createBookingModal({ onSave }) {
         <label>Containernummer<input name="container" required /></label>
         <label>Kennzeichen<input name="kennzeichen" required /></label>
         <label>Auftragsnummer<input name="auftrag" required /></label>
+        <label>Lager<input name="lager" required /></label>
         <label>Datum<input type="date" name="date" required /></label>
         <label>Typ
           <select name="type">
@@ -518,6 +524,7 @@ function createBookingModal({ onSave }) {
       container: data.get('container').toString().trim(),
       kennzeichen: data.get('kennzeichen').toString().trim(),
       auftrag: data.get('auftrag').toString().trim(),
+      lager: data.get('lager').toString().trim(),
       date: data.get('date').toString(),
       type: data.get('type').toString(),
       attachments: [],
@@ -564,6 +571,7 @@ function createBookingDetailsModal({ onBookingUpdate }) {
       <article><span>Container</span><strong>${escapeHtml(currentBooking.container)}</strong></article>
       <article><span>Kennzeichen</span><strong>${escapeHtml(currentBooking.kennzeichen)}</strong></article>
       <article><span>Auftrag</span><strong>${escapeHtml(currentBooking.auftrag)}</strong></article>
+      <article><span>Lager</span><strong>${escapeHtml(currentBooking.lager || '-')}</strong></article>
       <article><span>Datum</span><strong>${escapeHtml(currentBooking.date)}</strong></article>
       <article><span>Typ</span><strong>${escapeHtml(getBookingTypeLabel(currentBooking.type))}</strong></article>
     `;
