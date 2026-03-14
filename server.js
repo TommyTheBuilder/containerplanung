@@ -185,7 +185,6 @@ app.get('/api/sso/container-planning-session', async (req, res) => {
   return issueModuleSsoSession(req, res, {
     moduleKey: 'container-planning',
     targetUrl: SSO_CONTAINER_PLANNING_URL,
-    requiredPermission: 'container_planning',
   });
 });
 
@@ -381,7 +380,7 @@ async function issueModuleSsoSession(req, res, { moduleKey, targetUrl, requiredP
   }
 
   const userPayload = authResult.user;
-  const hasPermission = hasModulePermission(userPayload, requiredPermission);
+  const hasPermission = !requiredPermission || hasModulePermission(userPayload, requiredPermission);
   if (!hasPermission) {
     logSsoEvent('SSO_SESSION_DENIED', {
       moduleKey,

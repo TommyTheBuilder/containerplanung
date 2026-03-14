@@ -50,6 +50,20 @@ test('erlaubter Zugriff erstellt Redirect-URL mit kurzlebigem Token', async () =
   });
 });
 
+test('container-planning-session erlaubt Zugriff für jeden eingeloggten User via Session-Cookie', async () => {
+  await withServer(async (baseUrl) => {
+    const sessionToken = makeAuthToken({ role: 'viewer', permissions: [] });
+    const response = await fetch(`${baseUrl}/api/sso/container-planning-session`, {
+      headers: { Cookie: `containerplanung_session=${encodeURIComponent(sessionToken)}` },
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(typeof body.redirectUrl, 'string');
+    assert.match(body.redirectUrl, /^https:\/\/example.org\/container-planning\?/);
+  });
+});
+
 test('401 ohne Session oder Bearer', async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/sso/container-planning-session`);
