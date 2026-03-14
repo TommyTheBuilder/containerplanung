@@ -133,6 +133,23 @@ async function deleteBooking(bookingId) {
   }
 }
 
+async function updateBookingDate(bookingId, date) {
+  const response = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}/date`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ date }),
+  });
+
+  if (!response.ok) {
+    const payload = await safeReadJson(response);
+    throw new Error(payload?.message || 'Buchungsdatum konnte nicht gespeichert werden.');
+  }
+
+  const updated = await response.json();
+  return mapApiBookingToUi(updated);
+}
+
 async function safeReadJson(response) {
   try {
     return await response.json();
@@ -335,14 +352,28 @@ function renderGrid() {
 
     dayCard.addEventListener('dragleave', () => dayCard.classList.remove('is-drop-target'));
 
-    dayCard.addEventListener('drop', (event) => {
+    dayCard.addEventListener('drop', async (event) => {
       event.preventDefault();
       dayCard.classList.remove('is-drop-target');
       const bookingId = event.dataTransfer.getData('text/booking-id');
       const booking = bookings.find((item) => item.id === bookingId);
       if (!booking) return;
+
+      const previousDate = booking.date;
+      if (previousDate === ymd) return;
+
       booking.date = ymd;
       render();
+
+      try {
+        const updatedBooking = await updateBookingDate(booking.id, ymd);
+        const index = bookings.findIndex((item) => item.id === booking.id);
+        if (index >= 0) bookings[index] = updatedBooking;
+      } catch (error) {
+        booking.date = previousDate;
+        render();
+        window.alert(error.message || 'Buchung konnte nicht verschoben werden.');
+      }
     });
 
     calendarGrid.append(dayCard);
