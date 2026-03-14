@@ -8,6 +8,7 @@ const authCard = document.getElementById('authCard');
 const bookingCard = document.getElementById('bookingCard');
 const calendarCard = document.getElementById('calendarCard');
 const logoutBtn = document.getElementById('logoutBtn');
+const ssoLoginBtn = document.getElementById('ssoLoginBtn');
 
 const prevMonthBtn = document.getElementById('prevMonth');
 const nextMonthBtn = document.getElementById('nextMonth');
@@ -30,7 +31,7 @@ if (token) {
   processSsoReturn();
 }
 
-ssoLoginBtn.addEventListener('click', () => {
+ssoLoginBtn?.addEventListener('click', () => {
   startSsoLogin({ force: true });
 });
 
@@ -49,6 +50,7 @@ bookingForm.addEventListener('submit', async (event) => {
     title: formData.get('title').toString().trim(),
     containerNo: formData.get('containerNo').toString().trim(),
     customer: formData.get('customer').toString().trim(),
+    warehouse: formData.get('warehouse').toString().trim(),
     plate: formData.get('plate').toString().trim(),
     orderNo: formData.get('orderNo').toString().trim(),
     date: formData.get('bookingDate').toString(),
@@ -297,7 +299,7 @@ function renderCalendar() {
       const bookingEl = bookingTemplate.content.firstElementChild.cloneNode(true);
       bookingEl.style.background = booking.color;
       bookingEl.querySelector('.booking-title').textContent = booking.title;
-      bookingEl.querySelector('.booking-meta').textContent = `${booking.containerNo} · ${booking.customer} · ${booking.plate} · ${booking.orderNo}`;
+      bookingEl.querySelector('.booking-meta').textContent = `${booking.containerNo} · ${booking.customer} · ${booking.warehouse} · ${booking.plate} · ${booking.orderNo}`;
       bookingEl.title = 'Klicken zum Löschen';
 
       bookingEl.addEventListener('click', async () => {

@@ -236,7 +236,7 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
   const to = toDate.toISOString().slice(0, 10);
 
   const result = await pool.query(
-    `SELECT id, title, container_no AS "containerNo", customer, plate, order_no AS "orderNo", booking_date::text AS date, color
+    `SELECT id, title, container_no AS "containerNo", customer, warehouse, plate, order_no AS "orderNo", booking_date::text AS date, color
      FROM bookings
      WHERE booking_date >= $1 AND booking_date < $2
      ORDER BY booking_date ASC, created_at ASC`,
@@ -247,16 +247,16 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
 });
 
 app.post('/api/bookings', requireAuth, authorizeRoles('admin', 'disponent'), async (req, res) => {
-  const { title, containerNo, customer, plate, orderNo, date, color } = req.body || {};
-  if (!title || !containerNo || !customer || !plate || !orderNo || !date) {
+  const { title, containerNo, customer, warehouse, plate, orderNo, date, color } = req.body || {};
+  if (!title || !containerNo || !customer || !warehouse || !plate || !orderNo || !date) {
     return res.status(400).json({ message: 'Alle Buchungsfelder sind erforderlich.' });
   }
 
   const result = await pool.query(
-    `INSERT INTO bookings (title, container_no, customer, plate, order_no, booking_date, color, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id, title, container_no AS "containerNo", customer, plate, order_no AS "orderNo", booking_date::text AS date, color`,
-    [title, containerNo, customer, plate, orderNo, date, color || '#0ea5e9', req.user.sub],
+    `INSERT INTO bookings (title, container_no, customer, warehouse, plate, order_no, booking_date, color, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id, title, container_no AS "containerNo", customer, warehouse, plate, order_no AS "orderNo", booking_date::text AS date, color`,
+    [title, containerNo, customer, warehouse, plate, orderNo, date, color || '#0ea5e9', req.user.sub],
   );
 
   return res.status(201).json(result.rows[0]);
