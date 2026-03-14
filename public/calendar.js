@@ -14,7 +14,7 @@ const darkModeToggle = document.getElementById('darkModeToggle');
 const moduleDashboardBtn = document.getElementById('moduleDashboardBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 
-const DARK_MODE_KEY = 'containerplanung.darkmode';
+const DARK_MODE_KEY_PREFIX = 'containerplanung.darkmode';
 const TOKEN_KEY = 'containerplanung-token';
 const SSO_SOURCE_HOST = 'test.paletten-ms.de';
 
@@ -342,9 +342,34 @@ function getBookingTypeLabel(type) {
 }
 
 function applyInitialTheme() {
-  const isDark = localStorage.getItem(DARK_MODE_KEY) === '1';
+  const isDark = localStorage.getItem(getDarkModeStorageKey()) === '1';
   document.body.classList.toggle('theme-dark', isDark);
   if (darkModeToggle) darkModeToggle.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+}
+
+function getDarkModeStorageKey() {
+  const username = getCurrentUsername();
+  return username ? `${DARK_MODE_KEY_PREFIX}.${username}` : DARK_MODE_KEY_PREFIX;
+}
+
+function getCurrentUsername() {
+  const authToken = localStorage.getItem(TOKEN_KEY) || '';
+  return getUsernameFromJwt(authToken);
+}
+
+function getUsernameFromJwt(rawToken) {
+  if (!rawToken) return '';
+  const tokenParts = String(rawToken).split('.');
+  if (tokenParts.length < 2) return '';
+
+  try {
+    const payloadBase64 = tokenParts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payloadJson = atob(payloadBase64.padEnd(Math.ceil(payloadBase64.length / 4) * 4, '='));
+    const payload = JSON.parse(payloadJson);
+    return String(payload?.username || payload?.user || '').trim().toLowerCase();
+  } catch (_error) {
+    return '';
+  }
 }
 
 todayBtn?.addEventListener('click', () => {
@@ -387,7 +412,7 @@ gearMenuDropdown?.addEventListener('click', (event) => event.stopPropagation());
 darkModeToggle?.addEventListener('click', () => {
   const enabled = !document.body.classList.contains('theme-dark');
   document.body.classList.toggle('theme-dark', enabled);
-  localStorage.setItem(DARK_MODE_KEY, enabled ? '1' : '0');
+  localStorage.setItem(getDarkModeStorageKey(), enabled ? '1' : '0');
   darkModeToggle.textContent = enabled ? 'Light Mode' : 'Dark Mode';
   gearMenu?.classList.remove('is-open');
 });
@@ -410,11 +435,12 @@ moduleDashboardBtn?.addEventListener('click', async () => {
 
     const body = await response.json();
     const ssoToken = body?.ssoToken || '';
+    const username = String(body?.user?.username || getCurrentUsername()).trim().toLowerCase();
     const dashboardUrl = new URL('https://test.paletten-ms.de/dashboard.html');
 
     if (ssoToken) {
       dashboardUrl.searchParams.set('ssoToken', ssoToken);
-      dashboardUrl.searchParams.set('source', window.location.host);
+      if (username) dashboardUrl.searchParams.set('user', username);
     }
 
     window.location.href = dashboardUrl.toString();
