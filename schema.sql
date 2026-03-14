@@ -20,4 +20,15 @@ CREATE TABLE IF NOT EXISTS bookings (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Migration für Bestandsdatenbanken (vor Einführung von `warehouse`).
+ALTER TABLE bookings
+ADD COLUMN IF NOT EXISTS warehouse VARCHAR(255);
+
+UPDATE bookings
+SET warehouse = '-'
+WHERE warehouse IS NULL;
+
+ALTER TABLE bookings
+ALTER COLUMN warehouse SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(booking_date);
