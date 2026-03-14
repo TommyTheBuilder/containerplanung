@@ -70,15 +70,19 @@ async function initApp() {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
   applyInitialTheme();
-  await loadBookingsForCurrentMonth();
   render();
+  refreshDataAndRender();
 }
 
 async function loadBookingsForCurrentMonth() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
   try {
     const month = toYearMonth(cursorDate);
     const response = await fetch(`/api/bookings?month=${encodeURIComponent(month)}`, {
       credentials: 'include',
+      signal: controller.signal,
     });
 
     if (!response.ok) throw new Error('Buchungen konnten nicht geladen werden.');
@@ -87,7 +91,8 @@ async function loadBookingsForCurrentMonth() {
     bookings.splice(0, bookings.length, ...rows.map(mapApiBookingToUi));
   } catch (error) {
     console.error(error);
-    bookings.splice(0, bookings.length);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
