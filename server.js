@@ -12,6 +12,8 @@ const PORT = Number(process.env.PORT || 3005);
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const SHARED_AUTH_SECRET = process.env.SHARED_AUTH_SECRET || '';
 const SSO_LOGIN_URL = process.env.SSO_LOGIN_URL || 'https://test.paletten-ms.de/login.html';
+const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'containerplanung_session';
+const AUTH_COOKIE_SECURE = process.env.AUTH_COOKIE_SECURE === 'true';
 
 const pool = new Pool({
   host: process.env.DB_HOST || '127.0.0.1',
@@ -65,6 +67,7 @@ app.post('/api/auth/sso-exchange', async (req, res) => {
   const user = await upsertSsoUser(username, role);
 
   const token = jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '10h' });
+  setAuthCookie(res, token);
   return res.json({ token, user });
 });
 
@@ -159,6 +162,7 @@ app.post('/api/auth/sso-forward-token', async (req, res) => {
     const role = resolveSsoRole(payload);
     const user = await upsertSsoUser(username, role);
     const token = jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '10h' });
+    setAuthCookie(res, token);
     return res.json({ token, user, redirectTo: '/dashboard' });
   } catch (_error) {
     logSsoIssue('USER_NOT_FOUND', { route: req.path, username });
@@ -188,8 +192,33 @@ app.post('/api/auth/login', async (req, res) => {
   const role = normalizeRole(externalUser.role);
   const user = await upsertSsoUser(externalUser.username, role);
   const token = jwt.sign({ sub: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '10h' });
+  setAuthCookie(res, token);
 
   return res.json({ token, user });
+});
+
+app.get('/api/auth/session-redirect', async (req, res) => {
+  const token = String(req.query.ssoToken || req.query.token || req.query.session || '').trim();
+  const user = String(req.query.user || req.query.username || '').trim().toLowerCase();
+  const returnTo = resolveReturnPath(req.query.returnTo);
+
+  if (!token) {
+    return res.redirect(`/login.html?error=${encodeURIComponent('missing_session')}`);
+  }
+
+  try {
+    const exchangeResponse = await exchangeSsoForSession(token, user);
+    if (!exchangeResponse?.token) throw new Error('Kein Session-Token erhalten.');
+    setAuthCookie(res, exchangeResponse.token);
+    return res.redirect(returnTo);
+  } catch (_error) {
+    return res.redirect(`/login.html?error=${encodeURIComponent('invalid_session')}`);
+  }
+});
+
+app.post('/api/auth/logout', (_req, res) => {
+  clearAuthCookie(res);
+  return res.json({ ok: true });
 });
 
 app.get('/health', async (_req, res) => {
@@ -324,8 +353,7 @@ async function verifyPassword(password, passwordHash) {
 }
 
 function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = extractBearerToken(req) || getCookieValue(req, AUTH_COOKIE_NAME);
   if (!token) return res.status(401).json({ message: 'Nicht authentifiziert.' });
 
   try {
@@ -369,6 +397,81 @@ function extractSsoTokenFromBodyOrQuery(req) {
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || '';
   return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+}
+
+function getCookieValue(req, key) {
+  const rawCookie = req.headers.cookie || '';
+  const cookieParts = rawCookie.split(';').map((part) => part.trim());
+  const match = cookieParts.find((part) => part.startsWith(`${key}=`));
+  if (!match) return '';
+
+  const value = match.slice(key.length + 1);
+  try {
+    return decodeURIComponent(value);
+  } catch (_error) {
+    return value;
+  }
+}
+
+function setAuthCookie(res, token) {
+  res.cookie(AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: AUTH_COOKIE_SECURE,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 10 * 60 * 60 * 1000,
+  });
+}
+
+function clearAuthCookie(res) {
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    secure: AUTH_COOKIE_SECURE,
+    sameSite: 'lax',
+    path: '/',
+  });
+}
+
+async function exchangeSsoForSession(token, user) {
+  const fakeReq = {
+    body: { token, user },
+    query: {},
+    headers: {},
+    path: '/api/auth/session-redirect',
+  };
+
+  const incomingToken = extractSsoTokenFromBodyOrQuery(fakeReq);
+  const requestedUsername = extractRequestedUsername(fakeReq);
+  let payload = null;
+  let verifiedBySharedSecret = true;
+
+  try {
+    payload = jwt.verify(incomingToken, SHARED_AUTH_SECRET, { algorithms: ['HS256'] });
+  } catch (_error) {
+    verifiedBySharedSecret = false;
+    payload = decodeJwtPayload(incomingToken);
+    if (!requestedUsername) throw new Error('SSO-Token ungültig.');
+  }
+
+  const username = resolveSsoUsername(payload) || requestedUsername;
+  if (!username) throw new Error('Kein Benutzername im SSO-Token.');
+
+  if (verifiedBySharedSecret && typeof payload?.iat === 'number') {
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.iat > now + 60) throw new Error('SSO-Token ist zeitlich ungültig.');
+  }
+
+  const role = resolveSsoRole(payload);
+  const localUser = await upsertSsoUser(username, role);
+  const localToken = jwt.sign({ sub: localUser.id, username: localUser.username, role: localUser.role }, JWT_SECRET, { expiresIn: '10h' });
+  return { token: localToken, user: localUser };
+}
+
+function resolveReturnPath(rawReturnTo) {
+  const candidate = String(rawReturnTo || '').trim();
+  if (!candidate.startsWith('/')) return '/';
+  if (candidate.startsWith('//')) return '/';
+  return candidate;
 }
 
 function resolveSsoUsername(payload) {

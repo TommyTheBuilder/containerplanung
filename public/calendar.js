@@ -15,7 +15,6 @@ const moduleDashboardBtn = document.getElementById('moduleDashboardBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 
 const DARK_MODE_KEY_PREFIX = 'containerplanung.darkmode';
-const TOKEN_KEY = 'containerplanung-token';
 const SSO_SOURCE_HOST = 'test.paletten-ms.de';
 
 const weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -93,20 +92,16 @@ async function initApp() {
 }
 
 async function ensureAuthenticated() {
-  const existingToken = localStorage.getItem(TOKEN_KEY) || '';
-  if (existingToken) return true;
+  const hasSession = await hasActiveSession();
+  if (hasSession) return true;
 
   const url = new URL(window.location.href);
   const ssoCredentials = getSsoCredentialsFromUrl(url);
   const cameFromSsoHost = didComeFromSsoHost();
 
   if (ssoCredentials.token) {
-    const exchangedToken = await exchangeSsoToken(ssoCredentials);
-    if (exchangedToken) {
-      localStorage.setItem(TOKEN_KEY, exchangedToken);
-      cleanupSsoParams(url);
-      return true;
-    }
+    startSessionRedirect(ssoCredentials, url);
+    return false;
   }
 
   if (cameFromSsoHost) {
@@ -141,29 +136,22 @@ async function startSsoLogin(currentUrl = new URL(window.location.href)) {
   }
 }
 
-async function exchangeSsoToken({ token, user }) {
-  try {
-    const response = await fetch('/api/auth/sso-forward-token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, user }),
-    });
 
-    if (!response.ok) return '';
-    const body = await response.json();
-    return body?.token || '';
-  } catch (_error) {
-    return '';
-  }
+function startSessionRedirect({ token, user }, currentUrl = new URL(window.location.href)) {
+  const redirectUrl = new URL('/api/auth/session-redirect', currentUrl.origin);
+  redirectUrl.searchParams.set('ssoToken', token);
+  if (user) redirectUrl.searchParams.set('user', user);
+  redirectUrl.searchParams.set('returnTo', currentUrl.pathname || '/');
+  window.location.replace(redirectUrl.toString());
 }
 
-function cleanupSsoParams(url) {
-  url.searchParams.delete('ssoToken');
-  url.searchParams.delete('session');
-  url.searchParams.delete('token');
-  url.searchParams.delete('user');
-  url.hash = '';
-  window.history.replaceState({}, document.title, url.toString());
+async function hasActiveSession() {
+  try {
+    const response = await fetch('/api/auth/me', { credentials: 'include' });
+    return response.ok;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function getSsoCredentialsFromUrl(url) {
@@ -392,28 +380,7 @@ function applyInitialTheme() {
 }
 
 function getDarkModeStorageKey() {
-  const username = getCurrentUsername();
-  return username ? `${DARK_MODE_KEY_PREFIX}.${username}` : DARK_MODE_KEY_PREFIX;
-}
-
-function getCurrentUsername() {
-  const authToken = localStorage.getItem(TOKEN_KEY) || '';
-  return getUsernameFromJwt(authToken);
-}
-
-function getUsernameFromJwt(rawToken) {
-  if (!rawToken) return '';
-  const tokenParts = String(rawToken).split('.');
-  if (tokenParts.length < 2) return '';
-
-  try {
-    const payloadBase64 = tokenParts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const payloadJson = atob(payloadBase64.padEnd(Math.ceil(payloadBase64.length / 4) * 4, '='));
-    const payload = JSON.parse(payloadJson);
-    return String(payload?.username || payload?.user || '').trim().toLowerCase();
-  } catch (_error) {
-    return '';
-  }
+  return DARK_MODE_KEY_PREFIX;
 }
 
 todayBtn?.addEventListener('click', () => {
@@ -467,24 +434,17 @@ darkModeToggle?.addEventListener('click', () => {
 });
 
 moduleDashboardBtn?.addEventListener('click', async () => {
-  const authToken = localStorage.getItem(TOKEN_KEY) || '';
-
-  if (!authToken) {
-    window.location.href = 'https://test.paletten-ms.de/dashboard.html';
-    return;
-  }
-
   try {
     const response = await fetch('/api/auth/sso-forward-token', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` },
+      credentials: 'include',
     });
 
     if (!response.ok) throw new Error('SSO-Weiterleitungs-Token konnte nicht erstellt werden.');
 
     const body = await response.json();
     const ssoToken = body?.ssoToken || '';
-    const username = String(body?.user?.username || getCurrentUsername()).trim().toLowerCase();
+    const username = String(body?.user?.username || '').trim().toLowerCase();
     const dashboardUrl = new URL('https://test.paletten-ms.de/dashboard.html');
 
     if (ssoToken) {
@@ -498,8 +458,12 @@ moduleDashboardBtn?.addEventListener('click', async () => {
   }
 });
 
-logoutBtn?.addEventListener('click', () => {
-  localStorage.removeItem(TOKEN_KEY);
+logoutBtn?.addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } catch (_error) {
+    // no-op
+  }
   sessionStorage.clear();
   window.location.href = '/login.html';
 });
