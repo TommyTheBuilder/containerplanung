@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   title VARCHAR(255) NOT NULL,
   container_no VARCHAR(120) NOT NULL,
   customer VARCHAR(255) NOT NULL,
+  warehouse VARCHAR(255) NOT NULL,
   plate VARCHAR(120) NOT NULL,
   order_no VARCHAR(120) NOT NULL,
   booking_date DATE NOT NULL,
