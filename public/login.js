@@ -1,9 +1,13 @@
 const loginForm = document.getElementById('loginForm');
 const loginStatus = document.getElementById('loginStatus');
-const TOKEN_KEY = 'containerplanung-token';
 
-if (localStorage.getItem(TOKEN_KEY)) {
-  window.location.replace('/');
+init();
+
+async function init() {
+  const hasSession = await hasActiveSession();
+  if (hasSession) {
+    window.location.replace('/');
+  }
 }
 
 loginForm?.addEventListener('submit', async (event) => {
@@ -18,18 +22,27 @@ loginForm?.addEventListener('submit', async (event) => {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ username, password }),
     });
 
     const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body.token) {
+    if (!response.ok) {
       throw new Error(body.message || 'Anmeldung fehlgeschlagen.');
     }
 
-    localStorage.setItem(TOKEN_KEY, body.token);
     loginStatus.textContent = `Erfolgreich angemeldet als ${body.user?.username || username}.`;
     window.location.href = '/';
   } catch (error) {
     loginStatus.textContent = error.message || 'Anmeldung fehlgeschlagen.';
   }
 });
+
+async function hasActiveSession() {
+  try {
+    const response = await fetch('/api/auth/me', { credentials: 'include' });
+    return response.ok;
+  } catch (_error) {
+    return false;
+  }
+}
