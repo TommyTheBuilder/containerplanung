@@ -132,6 +132,11 @@ body.theme-dark {
 }
 
 .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.6rem; }
+
+.weekdays--day { grid-template-columns: 1fr; }
+
+.calendar-grid--day { grid-template-columns: 1fr; }
+
 .day-card {
   min-height: 125px;
   background: var(--panel);

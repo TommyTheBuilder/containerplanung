@@ -60,6 +60,16 @@ const detailsModal = createBookingDetailsModal({
     if (index >= 0) bookings[index] = updated;
     render();
   },
+  onBookingDelete(bookingId) {
+    const index = bookings.findIndex((booking) => booking.id === bookingId);
+    if (index < 0) return;
+
+    const [removedBooking] = bookings.splice(index, 1);
+    (removedBooking.attachments || []).forEach((file) => {
+      if (file?.url) URL.revokeObjectURL(file.url);
+    });
+    render();
+  },
 });
 
 document.body.append(bookingModal.overlay);
@@ -177,6 +187,15 @@ function normalizeUsername(value) {
 }
 
 function renderWeekdays() {
+  if (viewMode === 'day') {
+    weekdayHeader.innerHTML = '';
+    const node = document.createElement('div');
+    node.className = 'weekday';
+    node.textContent = cursorDate.toLocaleDateString('de-DE', { weekday: 'long' });
+    weekdayHeader.append(node);
+    return;
+  }
+
   weekdayHeader.innerHTML = '';
   weekdays.forEach((day) => {
     const node = document.createElement('div');
@@ -190,6 +209,13 @@ function renderRangeLabel() {
   if (!rangeLabel) return;
   if (viewMode === 'month') {
     rangeLabel.textContent = cursorDate.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  } else if (viewMode === 'day') {
+    rangeLabel.textContent = cursorDate.toLocaleDateString('de-DE', {
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
   } else {
     const { start, end } = getWeekRange(cursorDate);
     rangeLabel.textContent = `${start.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} – ${end.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
@@ -198,6 +224,8 @@ function renderRangeLabel() {
 
 function renderGrid() {
   calendarGrid.innerHTML = '';
+  calendarGrid.classList.toggle('calendar-grid--day', viewMode === 'day');
+  weekdayHeader.classList.toggle('weekdays--day', viewMode === 'day');
   const days = viewMode === 'month' ? buildMonthCells(cursorDate) : buildWeekCells(cursorDate);
 
   days.forEach(({ date, isCurrentMonth }) => {
@@ -293,6 +321,8 @@ function buildMonthCells(baseDate) {
 }
 
 function buildWeekCells(baseDate) {
+  if (viewMode === 'day') return [{ date: new Date(baseDate), isCurrentMonth: true }];
+
   const { start } = getWeekRange(baseDate);
   return Array.from({ length: 7 }, (_, offset) => {
     const date = new Date(start);
@@ -313,8 +343,10 @@ function getWeekRange(baseDate) {
 function syncViewButtons() {
   monthViewBtn?.classList.toggle('is-active', viewMode === 'month');
   monthViewBtn?.classList.toggle('btn--primary', viewMode === 'month');
+  monthViewBtn?.classList.toggle('btn--ghost', viewMode !== 'month');
   weekViewBtn?.classList.toggle('is-active', viewMode === 'week');
   weekViewBtn?.classList.toggle('btn--primary', viewMode === 'week');
+  weekViewBtn?.classList.toggle('btn--ghost', viewMode !== 'week');
 }
 
 function toYmd(date) {
@@ -385,6 +417,7 @@ function getUsernameFromJwt(rawToken) {
 }
 
 todayBtn?.addEventListener('click', () => {
+  viewMode = 'day';
   cursorDate = new Date();
   bookingModal.close();
   detailsModal.close();
@@ -404,6 +437,7 @@ weekViewBtn?.addEventListener('click', () => {
 prevBtn?.addEventListener('click', () => {
   cursorDate = new Date(cursorDate);
   if (viewMode === 'month') cursorDate.setMonth(cursorDate.getMonth() - 1);
+  else if (viewMode === 'day') cursorDate.setDate(cursorDate.getDate() - 1);
   else cursorDate.setDate(cursorDate.getDate() - 7);
   render();
 });
@@ -411,6 +445,7 @@ prevBtn?.addEventListener('click', () => {
 nextBtn?.addEventListener('click', () => {
   cursorDate = new Date(cursorDate);
   if (viewMode === 'month') cursorDate.setMonth(cursorDate.getMonth() + 1);
+  else if (viewMode === 'day') cursorDate.setDate(cursorDate.getDate() + 1);
   else cursorDate.setDate(cursorDate.getDate() + 7);
   render();
 });
@@ -535,7 +570,7 @@ function createBookingModal({ onSave }) {
   return { overlay, open, close };
 }
 
-function createBookingDetailsModal({ onBookingUpdate }) {
+function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -553,7 +588,10 @@ function createBookingDetailsModal({ onBookingUpdate }) {
           <ul class="attachment-list" id="attachmentList"></ul>
         </section>
       </div>
-      <div class="modal-actions"><button type="button" class="btn" data-close>Schließen</button></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn--danger" data-delete-booking>Buchung löschen</button>
+        <button type="button" class="btn" data-close>Schließen</button>
+      </div>
     </div>
   `;
 
@@ -621,6 +659,14 @@ function createBookingDetailsModal({ onBookingUpdate }) {
 
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay || event.target.dataset.close !== undefined) {
+      close();
+      return;
+    }
+
+    if (event.target.dataset.deleteBooking !== undefined && currentBooking) {
+      const confirmed = window.confirm(`Buchung „${currentBooking.title}“ wirklich löschen?`);
+      if (!confirmed) return;
+      onBookingDelete(currentBooking.id);
       close();
       return;
     }
