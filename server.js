@@ -41,6 +41,7 @@ const authPool = new Pool({
 
 const allowedThemes = new Set(['light', 'dark']);
 const themeByUser = new Map();
+let bookingsHasWarehouseColumn = null;
 
 app.use(express.json());
 app.use('/components', express.static(path.join(__dirname, 'components')));
@@ -290,8 +291,11 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
   toDate.setMonth(toDate.getMonth() + 1);
   const to = toDate.toISOString().slice(0, 10);
 
+  const hasWarehouseColumn = await getBookingsHasWarehouseColumn();
+  const warehouseSelect = hasWarehouseColumn ? 'warehouse' : "'-'::text AS warehouse";
+
   const result = await pool.query(
-    `SELECT id, title, container_no AS "containerNo", customer, warehouse, plate, order_no AS "orderNo", booking_date::text AS date, color
+    `SELECT id, title, container_no AS "containerNo", customer, ${warehouseSelect}, plate, order_no AS "orderNo", booking_date::text AS date, color
      FROM bookings
      WHERE booking_date >= $1 AND booking_date < $2
      ORDER BY booking_date ASC, created_at ASC`,
@@ -303,18 +307,54 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
 
 app.post('/api/bookings', requireAuth, authorizeRoles('admin', 'disponent'), async (req, res) => {
   const { title, containerNo, customer, warehouse, plate, orderNo, date, color } = req.body || {};
-  if (!title || !containerNo || !customer || !warehouse || !plate || !orderNo || !date) {
+  if (!title || !containerNo || !customer || !plate || !orderNo || !date) {
     return res.status(400).json({ message: 'Alle Buchungsfelder sind erforderlich.' });
   }
 
+  const hasWarehouseColumn = await getBookingsHasWarehouseColumn();
+  const warehouseValue = String(warehouse || '-');
+  const insertColumns = hasWarehouseColumn
+    ? '(title, container_no, customer, warehouse, plate, order_no, booking_date, color, created_by)'
+    : '(title, container_no, customer, plate, order_no, booking_date, color, created_by)';
+  const insertValues = hasWarehouseColumn
+    ? '($1, $2, $3, $4, $5, $6, $7, $8, $9)'
+    : '($1, $2, $3, $4, $5, $6, $7, $8)';
+  const returningWarehouse = hasWarehouseColumn ? 'warehouse' : "'-'::text AS warehouse";
+  const queryValues = hasWarehouseColumn
+    ? [title, containerNo, customer, warehouseValue, plate, orderNo, date, color || '#0ea5e9', req.user.sub]
+    : [title, containerNo, customer, plate, orderNo, date, color || '#0ea5e9', req.user.sub];
+
   const result = await pool.query(
-    `INSERT INTO bookings (title, container_no, customer, warehouse, plate, order_no, booking_date, color, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id, title, container_no AS "containerNo", customer, warehouse, plate, order_no AS "orderNo", booking_date::text AS date, color`,
-    [title, containerNo, customer, warehouse, plate, orderNo, date, color || '#0ea5e9', req.user.sub],
+    `INSERT INTO bookings ${insertColumns}
+     VALUES ${insertValues}
+     RETURNING id, title, container_no AS "containerNo", customer, ${returningWarehouse}, plate, order_no AS "orderNo", booking_date::text AS date, color`,
+    queryValues,
   );
 
   return res.status(201).json(result.rows[0]);
+});
+
+app.patch('/api/bookings/:id/date', requireAuth, authorizeRoles('admin', 'disponent'), async (req, res) => {
+  const { id } = req.params;
+  const date = String(req.body?.date || '').trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ message: 'Datum muss im Format YYYY-MM-DD sein.' });
+  }
+
+  const hasWarehouseColumn = await getBookingsHasWarehouseColumn();
+  const returningWarehouse = hasWarehouseColumn ? 'warehouse' : "'-'::text AS warehouse";
+
+  const result = await pool.query(
+    `UPDATE bookings
+     SET booking_date = $2
+     WHERE id = $1
+     RETURNING id, title, container_no AS "containerNo", customer, ${returningWarehouse}, plate, order_no AS "orderNo", booking_date::text AS date, color`,
+    [id, date],
+  );
+
+  if (!result.rowCount) return res.status(404).json({ message: 'Eintrag nicht gefunden.' });
+  return res.json(result.rows[0]);
 });
 
 app.delete('/api/bookings/:id', requireAuth, authorizeRoles('admin', 'disponent'), async (req, res) => {
@@ -400,6 +440,22 @@ async function issueModuleSsoSession(req, res, { moduleKey, targetUrl, requiredP
     ssoToken,
     expiresInSeconds: SSO_REDIRECT_TOKEN_TTL_SECONDS,
   });
+}
+
+async function getBookingsHasWarehouseColumn() {
+  if (typeof bookingsHasWarehouseColumn === 'boolean') {
+    return bookingsHasWarehouseColumn;
+  }
+
+  const result = await pool.query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'bookings' AND column_name = 'warehouse'
+     LIMIT 1`,
+  );
+
+  bookingsHasWarehouseColumn = result.rowCount > 0;
+  return bookingsHasWarehouseColumn;
 }
 
 async function findExternalUser(username) {
