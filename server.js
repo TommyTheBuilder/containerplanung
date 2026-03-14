@@ -102,7 +102,13 @@ app.post('/api/auth/sso-forward-token', async (req, res) => {
     if (legacyLocalUser) {
       const role = normalizeRole(legacyLocalUser.role);
       const ssoToken = jwt.sign({ username: legacyLocalUser.username, role }, SHARED_AUTH_SECRET, { expiresIn: '120s' });
-      return res.json({ ssoToken });
+      return res.json({
+        ssoToken,
+        user: {
+          username: legacyLocalUser.username,
+          role,
+        },
+      });
     }
   }
 
