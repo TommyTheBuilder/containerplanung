@@ -589,6 +589,13 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
         </section>
       </div>
       <div class="modal-actions">
+        <div class="confirm-delete" id="confirmDeleteBox" hidden>
+          <p class="confirm-delete__text" id="confirmDeleteText">Diese Buchung wirklich löschen?</p>
+          <div class="confirm-delete__actions">
+            <button type="button" class="btn" data-cancel-delete>Abbrechen</button>
+            <button type="button" class="btn btn--danger" data-confirm-delete>Endgültig löschen</button>
+          </div>
+        </div>
         <button type="button" class="btn btn--danger" data-delete-booking>Buchung löschen</button>
         <button type="button" class="btn" data-close>Schließen</button>
       </div>
@@ -599,7 +606,12 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
   const attachmentList = overlay.querySelector('#attachmentList');
   const uploadInput = overlay.querySelector('#detailsUploadInput');
   const detailsTitle = overlay.querySelector('#detailsTitle');
+  const confirmDeleteBox = overlay.querySelector('#confirmDeleteBox');
+  const confirmDeleteText = overlay.querySelector('#confirmDeleteText');
   let currentBooking = null;
+  function setDeleteConfirmVisible(visible) {
+    if (confirmDeleteBox) confirmDeleteBox.hidden = !visible;
+  }
 
   function renderDetails() {
     if (!currentBooking) return;
@@ -647,12 +659,14 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
 
   function open(booking) {
     currentBooking = booking;
+    setDeleteConfirmVisible(false);
     renderDetails();
     overlay.classList.add('is-open');
   }
 
   function close() {
     overlay.classList.remove('is-open');
+    setDeleteConfirmVisible(false);
     uploadInput.value = '';
     currentBooking = null;
   }
@@ -664,8 +678,19 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     }
 
     if (event.target.dataset.deleteBooking !== undefined && currentBooking) {
-      const confirmed = window.confirm(`Buchung „${currentBooking.title}“ wirklich löschen?`);
-      if (!confirmed) return;
+      if (confirmDeleteText) {
+        confirmDeleteText.textContent = `Buchung „${currentBooking.title}“ wirklich endgültig löschen?`;
+      }
+      setDeleteConfirmVisible(true);
+      return;
+    }
+
+    if (event.target.dataset.cancelDelete !== undefined) {
+      setDeleteConfirmVisible(false);
+      return;
+    }
+
+    if (event.target.dataset.confirmDelete !== undefined && currentBooking) {
       onBookingDelete(currentBooking.id);
       close();
       return;
