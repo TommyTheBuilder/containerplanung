@@ -21,34 +21,12 @@ const weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Sa
 let viewMode = 'month';
 let cursorDate = new Date();
 
-const bookings = [
-  {
-    id: createId(),
-    title: 'Nova Lieferung',
-    container: 'CAIU3160880',
-    kennzeichen: 'BGL-AB123',
-    auftrag: '845233',
-    lager: 'Halle A',
-    date: '2026-03-12',
-    type: 'hand_unload',
-    attachments: [],
-  },
-  {
-    id: createId(),
-    title: 'Container Check',
-    container: 'MSKU4074217',
-    kennzeichen: 'M-CT901',
-    auftrag: '801116',
-    lager: 'Halle B',
-    date: toYmd(new Date()),
-    type: 'direct_unload',
-    attachments: [],
-  },
-];
+const bookings = [];
 
 const bookingModal = createBookingModal({
-  onSave(newBooking) {
-    bookings.push(newBooking);
+  async onSave(newBooking) {
+    const createdBooking = await createBooking(newBooking);
+    bookings.push(createdBooking);
     render();
   },
 });
@@ -59,7 +37,8 @@ const detailsModal = createBookingDetailsModal({
     if (index >= 0) bookings[index] = updated;
     render();
   },
-  onBookingDelete(bookingId) {
+  async onBookingDelete(bookingId) {
+    await deleteBooking(bookingId);
     const index = bookings.findIndex((booking) => booking.id === bookingId);
     if (index < 0) return;
 
@@ -88,7 +67,112 @@ async function initApp() {
   const authenticated = await ensureAuthenticated();
   if (!authenticated) return;
   applyInitialTheme();
+  await loadBookingsForCurrentMonth();
   render();
+}
+
+async function loadBookingsForCurrentMonth() {
+  try {
+    const month = toYearMonth(cursorDate);
+    const response = await fetch(`/api/bookings?month=${encodeURIComponent(month)}`, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) throw new Error('Buchungen konnten nicht geladen werden.');
+
+    const rows = await response.json();
+    bookings.splice(0, bookings.length, ...rows.map(mapApiBookingToUi));
+  } catch (error) {
+    console.error(error);
+    bookings.splice(0, bookings.length);
+  }
+}
+
+async function createBooking(booking) {
+  const response = await fetch('/api/bookings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      title: booking.title,
+      containerNo: booking.container,
+      customer: '-',
+      warehouse: booking.lager,
+      plate: booking.kennzeichen,
+      orderNo: booking.auftrag,
+      date: booking.date,
+      color: getColorForBookingType(booking.type),
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = await safeReadJson(response);
+    throw new Error(payload?.message || 'Buchung konnte nicht gespeichert werden.');
+  }
+
+  const created = await response.json();
+  return mapApiBookingToUi(created);
+}
+
+async function deleteBooking(bookingId) {
+  const response = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const payload = await safeReadJson(response);
+    throw new Error(payload?.message || 'Buchung konnte nicht gelöscht werden.');
+  }
+}
+
+async function safeReadJson(response) {
+  try {
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
+
+function mapApiBookingToUi(row) {
+  return {
+    id: String(row.id),
+    title: String(row.title || ''),
+    container: String(row.containerNo || ''),
+    kennzeichen: String(row.plate || ''),
+    auftrag: String(row.orderNo || ''),
+    lager: String(row.warehouse || ''),
+    date: String(row.date || ''),
+    type: getBookingTypeFromColor(row.color),
+    attachments: [],
+  };
+}
+
+function toYearMonth(date) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function getColorForBookingType(type) {
+  const colors = {
+    direct_unload: '#0ea5e9',
+    hand_unload: '#22c55e',
+    truck_delivery: '#6b7280',
+    special_storage: '#ef4444',
+  };
+  return colors[type] || '#0ea5e9';
+}
+
+function getBookingTypeFromColor(color) {
+  const normalized = String(color || '').toLowerCase();
+  const byColor = {
+    '#0ea5e9': 'direct_unload',
+    '#22c55e': 'hand_unload',
+    '#6b7280': 'truck_delivery',
+    '#ef4444': 'special_storage',
+  };
+  return byColor[normalized] || 'direct_unload';
 }
 
 async function ensureAuthenticated() {
@@ -358,11 +442,6 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-function createId() {
-  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
-  return `id-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
-}
-
 function getBookingTypeLabel(type) {
   const labels = {
     direct_unload: 'Container Direktentladung',
@@ -388,17 +467,17 @@ todayBtn?.addEventListener('click', () => {
   cursorDate = new Date();
   bookingModal.close();
   detailsModal.close();
-  render();
+  refreshDataAndRender();
 });
 
 monthViewBtn?.addEventListener('click', () => {
   viewMode = 'month';
-  render();
+  refreshDataAndRender();
 });
 
 weekViewBtn?.addEventListener('click', () => {
   viewMode = 'week';
-  render();
+  refreshDataAndRender();
 });
 
 prevBtn?.addEventListener('click', () => {
@@ -406,7 +485,7 @@ prevBtn?.addEventListener('click', () => {
   if (viewMode === 'month') cursorDate.setMonth(cursorDate.getMonth() - 1);
   else if (viewMode === 'day') cursorDate.setDate(cursorDate.getDate() - 1);
   else cursorDate.setDate(cursorDate.getDate() - 7);
-  render();
+  refreshDataAndRender();
 });
 
 nextBtn?.addEventListener('click', () => {
@@ -414,8 +493,17 @@ nextBtn?.addEventListener('click', () => {
   if (viewMode === 'month') cursorDate.setMonth(cursorDate.getMonth() + 1);
   else if (viewMode === 'day') cursorDate.setDate(cursorDate.getDate() + 1);
   else cursorDate.setDate(cursorDate.getDate() + 7);
-  render();
+  refreshDataAndRender();
 });
+
+function refreshDataAndRender() {
+  loadBookingsForCurrentMonth()
+    .then(() => render())
+    .catch((error) => {
+      console.error(error);
+      render();
+    });
+}
 
 gearMenuToggle?.addEventListener('click', (event) => {
   event.stopPropagation();
@@ -518,7 +606,6 @@ function createBookingModal({ onSave }) {
     event.preventDefault();
     const data = new FormData(form);
     onSave({
-      id: createId(),
       title: data.get('title').toString().trim(),
       container: data.get('container').toString().trim(),
       kennzeichen: data.get('kennzeichen').toString().trim(),
@@ -527,8 +614,12 @@ function createBookingModal({ onSave }) {
       date: data.get('date').toString(),
       type: data.get('type').toString(),
       attachments: [],
-    });
-    close();
+    })
+      .then(() => close())
+      .catch((error) => {
+        console.error(error);
+        window.alert(error.message || 'Buchung konnte nicht gespeichert werden.');
+      });
   });
 
   return { overlay, open, close };
@@ -553,13 +644,6 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
         </section>
       </div>
       <div class="modal-actions">
-        <div class="confirm-delete" id="confirmDeleteBox" hidden>
-          <p class="confirm-delete__text" id="confirmDeleteText">Diese Buchung wirklich löschen?</p>
-          <div class="confirm-delete__actions">
-            <button type="button" class="btn" data-cancel-delete>Abbrechen</button>
-            <button type="button" class="btn btn--danger" data-confirm-delete>Endgültig löschen</button>
-          </div>
-        </div>
         <button type="button" class="btn btn--danger" data-delete-booking>Buchung löschen</button>
         <button type="button" class="btn" data-close>Schließen</button>
       </div>
@@ -570,12 +654,7 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
   const attachmentList = overlay.querySelector('#attachmentList');
   const uploadInput = overlay.querySelector('#detailsUploadInput');
   const detailsTitle = overlay.querySelector('#detailsTitle');
-  const confirmDeleteBox = overlay.querySelector('#confirmDeleteBox');
-  const confirmDeleteText = overlay.querySelector('#confirmDeleteText');
   let currentBooking = null;
-  function setDeleteConfirmVisible(visible) {
-    if (confirmDeleteBox) confirmDeleteBox.hidden = !visible;
-  }
 
   function renderDetails() {
     if (!currentBooking) return;
@@ -623,14 +702,12 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
 
   function open(booking) {
     currentBooking = booking;
-    setDeleteConfirmVisible(false);
     renderDetails();
     overlay.classList.add('is-open');
   }
 
   function close() {
     overlay.classList.remove('is-open');
-    setDeleteConfirmVisible(false);
     uploadInput.value = '';
     currentBooking = null;
   }
@@ -642,21 +719,13 @@ function createBookingDetailsModal({ onBookingUpdate, onBookingDelete }) {
     }
 
     if (event.target.dataset.deleteBooking !== undefined && currentBooking) {
-      if (confirmDeleteText) {
-        confirmDeleteText.textContent = `Buchung „${currentBooking.title}“ wirklich endgültig löschen?`;
-      }
-      setDeleteConfirmVisible(true);
-      return;
-    }
-
-    if (event.target.dataset.cancelDelete !== undefined) {
-      setDeleteConfirmVisible(false);
-      return;
-    }
-
-    if (event.target.dataset.confirmDelete !== undefined && currentBooking) {
-      onBookingDelete(currentBooking.id);
-      close();
+      if (!window.confirm(`Buchung „${currentBooking.title}“ wirklich löschen?`)) return;
+      onBookingDelete(currentBooking.id)
+        .then(() => close())
+        .catch((error) => {
+          console.error(error);
+          window.alert(error.message || 'Buchung konnte nicht gelöscht werden.');
+        });
       return;
     }
 
