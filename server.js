@@ -14,6 +14,16 @@ const SHARED_AUTH_SECRET = process.env.SHARED_AUTH_SECRET || '';
 const SSO_LOGIN_URL = process.env.SSO_LOGIN_URL || 'https://test.paletten-ms.de/login.html';
 const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'containerplanung_session';
 const AUTH_COOKIE_SECURE = process.env.AUTH_COOKIE_SECURE === 'true';
+const AUTH_COOKIE_SAME_SITE = normalizeSameSite(process.env.AUTH_COOKIE_SAME_SITE, 'lax');
+const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || '').trim().toLowerCase();
+const SSO_REDIRECT_SIGNING_SECRET = process.env.SSO_REDIRECT_SIGNING_SECRET || SHARED_AUTH_SECRET;
+const SSO_REDIRECT_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.SSO_REDIRECT_TOKEN_TTL_SECONDS || 120));
+const SSO_CONTAINER_PLANNING_URL = process.env.SSO_CONTAINER_PLANNING_URL || 'https://test.paletten-ms.de/container-planning';
+const SSO_CONTAINER_REGISTRATION_URL = process.env.SSO_CONTAINER_REGISTRATION_URL || 'https://test.paletten-ms.de/container-anmeldung';
+const EXTERNAL_SSO_COOKIE_NAME = String(process.env.EXTERNAL_SSO_COOKIE_NAME || '').trim();
+const EXTERNAL_SSO_COOKIE_DOMAIN = String(process.env.EXTERNAL_SSO_COOKIE_DOMAIN || '').trim().toLowerCase();
+const EXTERNAL_SSO_COOKIE_SECURE = process.env.EXTERNAL_SSO_COOKIE_SECURE !== 'false';
+const EXTERNAL_SSO_COOKIE_SAME_SITE = normalizeSameSite(process.env.EXTERNAL_SSO_COOKIE_SAME_SITE, 'none');
 
 const pool = new Pool({
   host: process.env.DB_HOST || '127.0.0.1',
@@ -170,6 +180,22 @@ app.post('/api/auth/sso-forward-token', async (req, res) => {
   }
 });
 
+app.get('/api/sso/container-planning-session', async (req, res) => {
+  return issueModuleSsoSession(req, res, {
+    moduleKey: 'container-planning',
+    targetUrl: SSO_CONTAINER_PLANNING_URL,
+    requiredPermission: 'container_planning',
+  });
+});
+
+app.get('/api/sso/container-registration-session', async (req, res) => {
+  return issueModuleSsoSession(req, res, {
+    moduleKey: 'container-registration',
+    targetUrl: SSO_CONTAINER_REGISTRATION_URL,
+    requiredPermission: 'container_registration',
+  });
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body || {};
   const normalizedUsername = String(username || '').trim().toLowerCase();
@@ -302,6 +328,80 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+async function issueModuleSsoSession(req, res, { moduleKey, targetUrl, requiredPermission }) {
+  const authResult = authenticateRequest(req);
+  if (!authResult.ok) {
+    logSsoEvent('SSO_SESSION_DENIED', {
+      moduleKey,
+      reason: 'unauthenticated',
+      authSource: authResult.authSource,
+      route: req.path,
+    });
+    return res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Nicht authentifiziert.' } });
+  }
+
+  const userPayload = authResult.user;
+  const hasPermission = hasModulePermission(userPayload, requiredPermission);
+  if (!hasPermission) {
+    logSsoEvent('SSO_SESSION_DENIED', {
+      moduleKey,
+      reason: 'forbidden',
+      authSource: authResult.authSource,
+      username: userPayload.username,
+      route: req.path,
+    });
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Keine Berechtigung.' } });
+  }
+
+  if (!SSO_REDIRECT_SIGNING_SECRET) {
+    logSsoEvent('SSO_SESSION_FAILED', {
+      moduleKey,
+      reason: 'missing_signing_secret',
+      authSource: authResult.authSource,
+      route: req.path,
+    });
+    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'SSO-Redirect ist nicht konfiguriert.' } });
+  }
+
+  if (!isValidRedirectTarget(targetUrl)) {
+    logSsoEvent('SSO_SESSION_FAILED', {
+      moduleKey,
+      reason: 'invalid_target_url',
+      authSource: authResult.authSource,
+      route: req.path,
+    });
+    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'Ziel-URL ist ungültig konfiguriert.' } });
+  }
+
+  const ssoToken = jwt.sign(
+    {
+      sub: String(userPayload.sub || userPayload.username || ''),
+      username: String(userPayload.username || '').trim().toLowerCase(),
+      role: normalizeRole(userPayload.role),
+      permissions: normalizePermissions(userPayload.permissions),
+      module: moduleKey,
+    },
+    SSO_REDIRECT_SIGNING_SECRET,
+    { expiresIn: SSO_REDIRECT_TOKEN_TTL_SECONDS },
+  );
+
+  maybeAttachExternalCookie(req, res, ssoToken);
+
+  const redirectUrl = appendQueryParam(targetUrl, 'ssoToken', ssoToken);
+  logSsoEvent('SSO_SESSION_CREATED', {
+    moduleKey,
+    authSource: authResult.authSource,
+    username: userPayload.username,
+    route: req.path,
+  });
+
+  return res.json({
+    redirectUrl,
+    ssoToken,
+    expiresInSeconds: SSO_REDIRECT_TOKEN_TTL_SECONDS,
+  });
+}
+
 async function findExternalUser(username) {
   const candidateQueries = [
     `SELECT username, password_hash AS "passwordHash", role
@@ -353,15 +453,10 @@ async function verifyPassword(password, passwordHash) {
 }
 
 function requireAuth(req, res, next) {
-  const token = extractBearerToken(req) || getCookieValue(req, AUTH_COOKIE_NAME);
-  if (!token) return res.status(401).json({ message: 'Nicht authentifiziert.' });
-
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    return next();
-  } catch (_error) {
-    return res.status(401).json({ message: 'Token ungültig oder abgelaufen.' });
-  }
+  const authResult = authenticateRequest(req);
+  if (!authResult.ok) return res.status(401).json({ message: 'Nicht authentifiziert.' });
+  req.user = authResult.user;
+  return next();
 }
 
 function authorizeRoles(...roles) {
@@ -377,6 +472,28 @@ function normalizeRole(role) {
 
 function extractSsoToken(req) {
   return extractSsoTokenFromBodyOrQuery(req) || extractBearerToken(req);
+}
+
+function authenticateRequest(req) {
+  const bearerToken = extractBearerToken(req);
+  if (bearerToken) {
+    try {
+      return { ok: true, user: jwt.verify(bearerToken, JWT_SECRET), authSource: 'bearer' };
+    } catch (_error) {
+      return { ok: false, authSource: 'bearer' };
+    }
+  }
+
+  const cookieToken = getCookieValue(req, AUTH_COOKIE_NAME);
+  if (cookieToken) {
+    try {
+      return { ok: true, user: jwt.verify(cookieToken, JWT_SECRET), authSource: 'session_cookie' };
+    } catch (_error) {
+      return { ok: false, authSource: 'session_cookie' };
+    }
+  }
+
+  return { ok: false, authSource: 'none' };
 }
 
 function extractSsoTokenFromBodyOrQuery(req) {
@@ -414,22 +531,34 @@ function getCookieValue(req, key) {
 }
 
 function setAuthCookie(res, token) {
-  res.cookie(AUTH_COOKIE_NAME, token, {
+  const options = {
     httpOnly: true,
     secure: AUTH_COOKIE_SECURE,
-    sameSite: 'lax',
+    sameSite: AUTH_COOKIE_SAME_SITE,
     path: '/',
     maxAge: 10 * 60 * 60 * 1000,
-  });
+  };
+
+  if (AUTH_COOKIE_DOMAIN) {
+    options.domain = AUTH_COOKIE_DOMAIN;
+  }
+
+  res.cookie(AUTH_COOKIE_NAME, token, options);
 }
 
 function clearAuthCookie(res) {
-  res.clearCookie(AUTH_COOKIE_NAME, {
+  const options = {
     httpOnly: true,
     secure: AUTH_COOKIE_SECURE,
-    sameSite: 'lax',
+    sameSite: AUTH_COOKIE_SAME_SITE,
     path: '/',
-  });
+  };
+
+  if (AUTH_COOKIE_DOMAIN) {
+    options.domain = AUTH_COOKIE_DOMAIN;
+  }
+
+  res.clearCookie(AUTH_COOKIE_NAME, options);
 }
 
 async function exchangeSsoForSession(token, user) {
@@ -502,6 +631,86 @@ function resolveSsoRole(payload) {
   }
 
   return normalizeRole(undefined);
+}
+
+function hasModulePermission(userPayload, permission) {
+  const role = String(userPayload?.role || '').trim().toLowerCase();
+  if (role === 'admin' || role === 'disponent') return true;
+  const permissions = normalizePermissions(userPayload?.permissions);
+  return permissions.includes(permission);
+}
+
+function normalizePermissions(permissions) {
+  if (!Array.isArray(permissions)) return [];
+  return permissions.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
+}
+
+function normalizeSameSite(value, fallback) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['lax', 'strict', 'none'].includes(normalized)) return normalized;
+  return fallback;
+}
+
+function isValidRedirectTarget(urlValue) {
+  try {
+    const parsed = new URL(urlValue);
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function appendQueryParam(urlValue, key, value) {
+  const separator = urlValue.includes('?') ? '&' : '?';
+  return `${urlValue}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
+function maybeAttachExternalCookie(req, res, token) {
+  if (!EXTERNAL_SSO_COOKIE_NAME || !EXTERNAL_SSO_COOKIE_DOMAIN) return;
+
+  const host = String(req.hostname || '').trim().toLowerCase();
+  if (!isCookieDomainCompatible(host, EXTERNAL_SSO_COOKIE_DOMAIN)) {
+    logSsoEvent('SSO_EXTERNAL_COOKIE_SKIPPED', {
+      route: req.path,
+      reason: 'domain_mismatch',
+      requestHost: host,
+      cookieDomain: EXTERNAL_SSO_COOKIE_DOMAIN,
+    });
+    return;
+  }
+
+  if (EXTERNAL_SSO_COOKIE_SAME_SITE === 'none' && !EXTERNAL_SSO_COOKIE_SECURE) {
+    logSsoEvent('SSO_EXTERNAL_COOKIE_SKIPPED', {
+      route: req.path,
+      reason: 'invalid_samesite_secure_combo',
+      sameSite: EXTERNAL_SSO_COOKIE_SAME_SITE,
+      secure: EXTERNAL_SSO_COOKIE_SECURE,
+    });
+    return;
+  }
+
+  res.cookie(EXTERNAL_SSO_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: EXTERNAL_SSO_COOKIE_SECURE,
+    sameSite: EXTERNAL_SSO_COOKIE_SAME_SITE,
+    domain: EXTERNAL_SSO_COOKIE_DOMAIN,
+    path: '/',
+    maxAge: SSO_REDIRECT_TOKEN_TTL_SECONDS * 1000,
+  });
+}
+
+function isCookieDomainCompatible(requestHost, cookieDomain) {
+  if (!requestHost || !cookieDomain) return false;
+  const normalizedCookieDomain = cookieDomain.startsWith('.') ? cookieDomain.slice(1) : cookieDomain;
+  return requestHost === normalizedCookieDomain || requestHost.endsWith(`.${normalizedCookieDomain}`);
+}
+
+function logSsoEvent(event, fields = {}) {
+  console.info('[SSO_EVENT]', {
+    event,
+    ...fields,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 function mapJwtVerifyErrorToReasonCode(error) {
@@ -580,7 +789,16 @@ async function start() {
   });
 }
 
-start().catch((error) => {
-  console.error('Serverstart fehlgeschlagen:', error);
-  process.exit(1);
-});
+if (require.main === module) {
+  start().catch((error) => {
+    console.error('Serverstart fehlgeschlagen:', error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  app,
+  appendQueryParam,
+  normalizeSameSite,
+  isCookieDomainCompatible,
+};

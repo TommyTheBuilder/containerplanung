@@ -12,6 +12,8 @@ const gearMenuToggle = document.getElementById('gearMenuToggle');
 const gearMenuDropdown = document.getElementById('gearMenuDropdown');
 const darkModeToggle = document.getElementById('darkModeToggle');
 const moduleDashboardBtn = document.getElementById('moduleDashboardBtn');
+const modulePlanningBtn = document.getElementById('modulePlanningBtn');
+const moduleRegistrationBtn = document.getElementById('moduleRegistrationBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 
 const DARK_MODE_KEY_PREFIX = 'containerplanung.darkmode';
@@ -22,6 +24,7 @@ let viewMode = 'month';
 let cursorDate = new Date();
 
 const bookings = [];
+let moduleRedirectInFlight = false;
 
 const bookingModal = createBookingModal({
   async onSave(newBooking) {
@@ -521,30 +524,45 @@ darkModeToggle?.addEventListener('click', () => {
   gearMenu?.classList.remove('is-open');
 });
 
-moduleDashboardBtn?.addEventListener('click', async () => {
+moduleDashboardBtn?.addEventListener('click', () => {
+  redirectToSsoTarget('/api/sso/container-registration-session', moduleDashboardBtn);
+});
+
+moduleRegistrationBtn?.addEventListener('click', () => {
+  redirectToSsoTarget('/api/sso/container-registration-session', moduleRegistrationBtn);
+});
+
+modulePlanningBtn?.addEventListener('click', () => {
+  redirectToSsoTarget('/api/sso/container-planning-session', modulePlanningBtn);
+});
+
+async function redirectToSsoTarget(endpoint, sourceButton) {
+  if (moduleRedirectInFlight) return;
+  moduleRedirectInFlight = true;
+  if (sourceButton) sourceButton.disabled = true;
+
   try {
-    const response = await fetch('/api/auth/sso-forward-token', {
-      method: 'POST',
-      credentials: 'include',
-    });
+    const response = await fetch(endpoint, { credentials: 'include' });
+    const body = await safeReadJson(response);
 
-    if (!response.ok) throw new Error('SSO-Weiterleitungs-Token konnte nicht erstellt werden.');
-
-    const body = await response.json();
-    const ssoToken = body?.ssoToken || '';
-    const username = String(body?.user?.username || '').trim().toLowerCase();
-    const dashboardUrl = new URL('https://test.paletten-ms.de/dashboard.html');
-
-    if (ssoToken) {
-      dashboardUrl.searchParams.set('ssoToken', ssoToken);
-      if (username) dashboardUrl.searchParams.set('user', username);
+    if (!response.ok) {
+      const message = body?.error?.message || body?.message || 'Weiterleitung konnte nicht vorbereitet werden.';
+      throw new Error(message);
     }
 
-    window.location.href = dashboardUrl.toString();
-  } catch (_error) {
-    window.location.href = 'https://test.paletten-ms.de/dashboard.html';
+    const redirectUrl = String(body?.redirectUrl || '').trim();
+    if (!redirectUrl) {
+      throw new Error('Weiterleitung fehlgeschlagen: Ziel-URL fehlt.');
+    }
+
+    window.location.href = redirectUrl;
+  } catch (error) {
+    alert(error?.message || 'SSO-Weiterleitung ist aktuell nicht verfügbar.');
+  } finally {
+    moduleRedirectInFlight = false;
+    if (sourceButton) sourceButton.disabled = false;
   }
-});
+}
 
 logoutBtn?.addEventListener('click', async () => {
   try {
