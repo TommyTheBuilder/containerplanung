@@ -27,6 +27,9 @@ const authPool = new Pool({
     'postgresql://palettenuser:DEIN_STARKES_PASSWORT@localhost:5432/palettenmanagement',
 });
 
+const allowedThemes = new Set(['light', 'dark']);
+const themeByUser = new Map();
+
 app.use(express.json());
 app.use('/components', express.static(path.join(__dirname, 'components')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
@@ -186,6 +189,23 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   const result = await pool.query('SELECT id, username, role FROM app_users WHERE id = $1', [req.user.sub]);
   if (!result.rowCount) return res.status(404).json({ message: 'Benutzer nicht gefunden' });
   return res.json(result.rows[0]);
+});
+
+app.get('/api/theme', (req, res) => {
+  const userKey = getThemeUserKey(req);
+  const theme = themeByUser.get(userKey) || 'light';
+  return res.json({ theme });
+});
+
+app.post('/api/theme', (req, res) => {
+  const theme = String(req.body?.theme || '').trim().toLowerCase();
+  if (!allowedThemes.has(theme)) {
+    return res.status(400).json({ message: 'theme muss "light" oder "dark" sein.' });
+  }
+
+  const userKey = getThemeUserKey(req);
+  themeByUser.set(userKey, theme);
+  return res.json({ theme });
 });
 
 app.get('/api/bookings', requireAuth, async (req, res) => {
@@ -371,6 +391,14 @@ function verifyLocalJwt(token) {
   } catch (_error) {
     return null;
   }
+}
+
+function getThemeUserKey(req) {
+  const token = extractBearerToken(req);
+  if (!token) return 'guest';
+  const payload = verifyLocalJwt(token);
+  if (!payload?.sub) return 'guest';
+  return `user:${payload.sub}`;
 }
 
 async function upsertSsoUser(username, role) {
