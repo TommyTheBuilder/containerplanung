@@ -14,7 +14,7 @@ const darkModeToggle = document.getElementById('darkModeToggle');
 const moduleDashboardBtn = document.getElementById('moduleDashboardBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 
-const DARK_MODE_KEY = 'containerplanung.darkmode';
+const DARK_MODE_KEY_PREFIX = 'containerplanung.darkmode';
 const TOKEN_KEY = 'containerplanung-token';
 const SSO_SOURCE_HOST = 'test.paletten-ms.de';
 
@@ -85,11 +85,11 @@ async function ensureAuthenticated() {
   if (existingToken) return true;
 
   const url = new URL(window.location.href);
-  const incomingSsoToken = getSsoTokenFromUrl(url);
+  const ssoCredentials = getSsoCredentialsFromUrl(url);
   const cameFromSsoHost = didComeFromSsoHost();
 
-  if (incomingSsoToken) {
-    const exchangedToken = await exchangeSsoToken(incomingSsoToken);
+  if (ssoCredentials.token) {
+    const exchangedToken = await exchangeSsoToken(ssoCredentials);
     if (exchangedToken) {
       localStorage.setItem(TOKEN_KEY, exchangedToken);
       cleanupSsoParams(url);
@@ -129,12 +129,12 @@ async function startSsoLogin(currentUrl = new URL(window.location.href)) {
   }
 }
 
-async function exchangeSsoToken(ssoToken) {
+async function exchangeSsoToken({ token, user }) {
   try {
     const response = await fetch('/api/auth/sso-forward-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: ssoToken }),
+      body: JSON.stringify({ token, user }),
     });
 
     if (!response.ok) return '';
@@ -149,20 +149,29 @@ function cleanupSsoParams(url) {
   url.searchParams.delete('ssoToken');
   url.searchParams.delete('session');
   url.searchParams.delete('token');
+  url.searchParams.delete('user');
   url.hash = '';
   window.history.replaceState({}, document.title, url.toString());
 }
 
-function getSsoTokenFromUrl(url) {
-  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session');
-  if (directToken) return directToken;
+function getSsoCredentialsFromUrl(url) {
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session') || '';
+  const directUser = url.searchParams.get('user') || '';
+  if (directToken || directUser) return { token: directToken, user: normalizeUsername(directUser) };
 
   if (url.hash.startsWith('#')) {
     const hashParams = new URLSearchParams(url.hash.slice(1));
-    return hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '';
+    return {
+      token: hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '',
+      user: normalizeUsername(hashParams.get('user') || ''),
+    };
   }
 
-  return '';
+  return { token: '', user: '' };
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function renderWeekdays() {
@@ -342,9 +351,34 @@ function getBookingTypeLabel(type) {
 }
 
 function applyInitialTheme() {
-  const isDark = localStorage.getItem(DARK_MODE_KEY) === '1';
+  const isDark = localStorage.getItem(getDarkModeStorageKey()) === '1';
   document.body.classList.toggle('theme-dark', isDark);
   if (darkModeToggle) darkModeToggle.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+}
+
+function getDarkModeStorageKey() {
+  const username = getCurrentUsername();
+  return username ? `${DARK_MODE_KEY_PREFIX}.${username}` : DARK_MODE_KEY_PREFIX;
+}
+
+function getCurrentUsername() {
+  const authToken = localStorage.getItem(TOKEN_KEY) || '';
+  return getUsernameFromJwt(authToken);
+}
+
+function getUsernameFromJwt(rawToken) {
+  if (!rawToken) return '';
+  const tokenParts = String(rawToken).split('.');
+  if (tokenParts.length < 2) return '';
+
+  try {
+    const payloadBase64 = tokenParts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payloadJson = atob(payloadBase64.padEnd(Math.ceil(payloadBase64.length / 4) * 4, '='));
+    const payload = JSON.parse(payloadJson);
+    return String(payload?.username || payload?.user || '').trim().toLowerCase();
+  } catch (_error) {
+    return '';
+  }
 }
 
 todayBtn?.addEventListener('click', () => {
@@ -387,7 +421,7 @@ gearMenuDropdown?.addEventListener('click', (event) => event.stopPropagation());
 darkModeToggle?.addEventListener('click', () => {
   const enabled = !document.body.classList.contains('theme-dark');
   document.body.classList.toggle('theme-dark', enabled);
-  localStorage.setItem(DARK_MODE_KEY, enabled ? '1' : '0');
+  localStorage.setItem(getDarkModeStorageKey(), enabled ? '1' : '0');
   darkModeToggle.textContent = enabled ? 'Light Mode' : 'Dark Mode';
   gearMenu?.classList.remove('is-open');
 });
@@ -410,11 +444,12 @@ moduleDashboardBtn?.addEventListener('click', async () => {
 
     const body = await response.json();
     const ssoToken = body?.ssoToken || '';
+    const username = String(body?.user?.username || getCurrentUsername()).trim().toLowerCase();
     const dashboardUrl = new URL('https://test.paletten-ms.de/dashboard.html');
 
     if (ssoToken) {
       dashboardUrl.searchParams.set('ssoToken', ssoToken);
-      dashboardUrl.searchParams.set('source', window.location.host);
+      if (username) dashboardUrl.searchParams.set('user', username);
     }
 
     window.location.href = dashboardUrl.toString();

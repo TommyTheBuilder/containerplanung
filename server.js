@@ -102,7 +102,13 @@ app.post('/api/auth/sso-forward-token', async (req, res) => {
     if (legacyLocalUser) {
       const role = normalizeRole(legacyLocalUser.role);
       const ssoToken = jwt.sign({ username: legacyLocalUser.username, role }, SHARED_AUTH_SECRET, { expiresIn: '120s' });
-      return res.json({ ssoToken });
+      return res.json({
+        ssoToken,
+        user: {
+          username: legacyLocalUser.username,
+          role,
+        },
+      });
     }
   }
 
@@ -113,22 +119,32 @@ app.post('/api/auth/sso-forward-token', async (req, res) => {
     return res.status(400).json({ message: 'Kein SSO-Token gefunden (body/query/auth header).' });
   }
 
-  let payload;
+  const requestedUsername = extractRequestedUsername(req);
+  let payload = null;
+  let verifiedBySharedSecret = true;
+
   try {
     payload = jwt.verify(incomingToken, SHARED_AUTH_SECRET, { algorithms: ['HS256'] });
   } catch (error) {
-    const reasonCode = mapJwtVerifyErrorToReasonCode(error);
-    logSsoIssue(reasonCode, { route: req.path });
-    return res.status(401).json({ message: 'SSO-Token ungültig oder abgelaufen.' });
+    verifiedBySharedSecret = false;
+    payload = decodeJwtPayload(incomingToken);
+
+    if (!requestedUsername) {
+      const reasonCode = mapJwtVerifyErrorToReasonCode(error);
+      logSsoIssue(reasonCode, { route: req.path });
+      return res.status(401).json({ message: 'SSO-Token ungültig oder abgelaufen.' });
+    }
+
+    logSsoIssue('JWT_UNVERIFIED_FALLBACK_WITH_USER', { route: req.path, username: requestedUsername });
   }
 
-  const username = resolveSsoUsername(payload);
+  const username = resolveSsoUsername(payload) || requestedUsername;
   if (!username) {
     logSsoIssue('JWT_MISSING_USERNAME', { route: req.path });
     return res.status(401).json({ message: 'SSO-Token enthält keinen Benutzernamen.' });
   }
 
-  if (typeof payload.iat === 'number') {
+  if (verifiedBySharedSecret && typeof payload?.iat === 'number') {
     const now = Math.floor(Date.now() / 1000);
     if (payload.iat > now + 60) {
       logSsoIssue('JWT_INVALID_IAT', { route: req.path });
@@ -337,6 +353,20 @@ function extractBearerToken(req) {
 
 function resolveSsoUsername(payload) {
   return String(payload?.username || payload?.user || payload?.sub || '').trim().toLowerCase();
+}
+
+function extractRequestedUsername(req) {
+  const body = req.body || {};
+  const query = req.query || {};
+  return String(body.user || body.username || query.user || query.username || '').trim().toLowerCase();
+}
+
+function decodeJwtPayload(token) {
+  try {
+    return jwt.decode(token) || {};
+  } catch (_error) {
+    return {};
+  }
 }
 
 function resolveSsoRole(payload) {

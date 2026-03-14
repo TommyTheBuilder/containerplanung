@@ -113,14 +113,14 @@ async function startSsoLogin({ force = false } = {}) {
 
 async function processSsoReturn() {
   const url = new URL(window.location.href);
-  const ssoToken = getSsoTokenFromUrl(url);
-  if (!ssoToken) {
+  const ssoCredentials = getSsoCredentialsFromUrl(url);
+  if (!ssoCredentials.token) {
     await startSsoLogin();
     return;
   }
 
   try {
-    const exchangeData = await exchangeSsoToken(ssoToken);
+    const exchangeData = await exchangeSsoToken(ssoCredentials);
 
     if (exchangeData?.token) {
       token = exchangeData.token;
@@ -155,11 +155,11 @@ async function processSsoReturn() {
   }
 }
 
-async function exchangeSsoToken(ssoToken) {
+async function exchangeSsoToken({ token: ssoToken, user }) {
   const response = await fetch('/api/auth/sso-forward-token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: ssoToken }),
+    body: JSON.stringify({ token: ssoToken, user }),
   });
 
   if (!response.ok) {
@@ -188,20 +188,29 @@ function cleanupSsoParams(url) {
   url.searchParams.delete('ssoToken');
   url.searchParams.delete('session');
   url.searchParams.delete('token');
+  url.searchParams.delete('user');
   url.hash = '';
   window.history.replaceState({}, document.title, url.toString());
 }
 
-function getSsoTokenFromUrl(url) {
-  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session');
-  if (directToken) return directToken;
+function getSsoCredentialsFromUrl(url) {
+  const directToken = url.searchParams.get('ssoToken') || url.searchParams.get('token') || url.searchParams.get('session') || '';
+  const directUser = url.searchParams.get('user') || '';
+  if (directToken || directUser) return { token: directToken, user: normalizeUsername(directUser) };
 
   if (url.hash.startsWith('#')) {
     const hashParams = new URLSearchParams(url.hash.slice(1));
-    return hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '';
+    return {
+      token: hashParams.get('ssoToken') || hashParams.get('token') || hashParams.get('session') || '',
+      user: normalizeUsername(hashParams.get('user') || ''),
+    };
   }
 
-  return '';
+  return { token: '', user: '' };
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 async function fetchBookings() {
